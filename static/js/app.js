@@ -162,8 +162,18 @@ document.addEventListener('DOMContentLoaded', function() {
             .then(data => {
                 // Update global data
                 networkObjects = data.nodes;
-                networkRelationships = data.links;
                 deviceGroups = data.groups || [];
+                
+                // Process relationships to include direct node references
+                networkRelationships = data.links.map(link => {
+                    const sourceNode = networkObjects.find(n => n.id === link.source_id);
+                    const targetNode = networkObjects.find(n => n.id === link.target_id);
+                    return {
+                        ...link,
+                        source: sourceNode || { id: link.source_id },
+                        target: targetNode || { id: link.target_id }
+                    };
+                });
                 
                 // Set initial positions if not already set
                 networkObjects.forEach(node => {
@@ -261,22 +271,19 @@ document.addEventListener('DOMContentLoaded', function() {
         simulation
             .nodes(networkObjects)
             .on('tick', () => {
-                // Update positions
+                // Update positions - safely access source and target
                 links
-                    .attr('x1', d => getNodeById(d.source_id).x)
-                    .attr('y1', d => getNodeById(d.source_id).y)
-                    .attr('x2', d => getNodeById(d.target_id).x)
-                    .attr('y2', d => getNodeById(d.target_id).y);
+                    .attr('x1', d => (d.source && d.source.x) ? d.source.x : (d.source_id && getNodeById(d.source_id).x))
+                    .attr('y1', d => (d.source && d.source.y) ? d.source.y : (d.source_id && getNodeById(d.source_id).y))
+                    .attr('x2', d => (d.target && d.target.x) ? d.target.x : (d.target_id && getNodeById(d.target_id).x))
+                    .attr('y2', d => (d.target && d.target.y) ? d.target.y : (d.target_id && getNodeById(d.target_id).y));
                 
                 nodes
                     .attr('transform', d => `translate(${d.x}, ${d.y})`);
             });
             
         simulation.force('link')
-            .links(networkRelationships.map(r => ({
-                source: getNodeById(r.source_id),
-                target: getNodeById(r.target_id)
-            })));
+            .links(networkRelationships);
             
         // Restart simulation with higher alpha for better grouping
         simulation.alpha(0.8).restart();
@@ -290,7 +297,8 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function getNodeById(id) {
-        return networkObjects.find(obj => obj.id === id) || { id };
+        if (!id) return { id: 'unknown', x: 0, y: 0 }; // Safe default with coordinates
+        return networkObjects.find(obj => obj.id === id) || { id, x: 0, y: 0 }; // Ensure node has x,y coords
     }
 
     function getNodeColor(type) {
@@ -803,7 +811,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const relationshipData = {
             source_id: sourceId,
             target_id: targetId,
-            rel_type: relType
+            type: relType  // Using 'type' to match backend expectations
         };
         
         // Send to API
@@ -816,8 +824,18 @@ document.addEventListener('DOMContentLoaded', function() {
         })
         .then(response => response.json())
         .then(data => {
-            // Add to local data
-            networkRelationships.push(data);
+            // Find the actual node objects
+            const sourceNode = getNodeById(sourceId);
+            const targetNode = getNodeById(targetId);
+            
+            // Add to local data with source and target references for D3
+            const relationshipWithRefs = {
+                ...data,
+                source: sourceNode,
+                target: targetNode
+            };
+            
+            networkRelationships.push(relationshipWithRefs);
             
             // Update visualization
             updateNetworkGraph();

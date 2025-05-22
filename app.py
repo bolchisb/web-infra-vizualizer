@@ -5,6 +5,7 @@ import uuid
 import os
 import datetime
 import time
+import json
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -224,27 +225,71 @@ def add_relationship():
     source_id = data.get('source_id')
     target_id = data.get('target_id')
     relationship_id = data.get('id', str(uuid.uuid4()))
-    connection_type = data.get('type', 'ethernet')
+    
+    # Handle both 'type' and 'rel_type' for backwards compatibility
+    connection_type = data.get('type', data.get('rel_type', 'ethernet'))
     metadata = data.get('metadata', {})
     
     if not source_id or not target_id:
         return jsonify({"error": "Source and target IDs are required"}), 400
-        
+    
+    # Handle metadata properly - Neo4j doesn't support complex types as properties
+    # Instead flatten any metadata properties or store as JSON string
+    rel_properties = {
+        'id': relationship_id,
+        'type': connection_type
+    }
+    
+    # Process metadata to ensure all values are primitive types
+    if metadata:
+        if isinstance(metadata, dict):
+            # Flatten simple key/value pairs
+            for key, value in metadata.items():
+                if isinstance(value, (str, int, float, bool)) or (isinstance(value, list) and all(isinstance(x, (str, int, float, bool)) for x in value)):
+                    # For primitive values, store directly
+                    rel_properties[f'metadata_{key}'] = value
+                else:
+                    # For complex values, serialize to JSON
+                    rel_properties[f'metadata_{key}_json'] = json.dumps(value)
+    
     with get_db_session() as session:
         # Check if both objects exist
         result = session.run(
             """
             MATCH (source:NetworkObject {id: $source_id})
             MATCH (target:NetworkObject {id: $target_id})
-            CREATE (source)-[r:CONNECTS {id: $id, type: $type, metadata: $metadata}]->(target)
-            RETURN source.id as source, target.id as target, r.id as id, r.type as type
+            CREATE (source)-[r:CONNECTS $properties]->(target)
+            RETURN source.id as source_id, target.id as target_id, r.id as id, r.type as type
             """,
-            source_id=source_id, target_id=target_id, id=relationship_id, type=connection_type, metadata=metadata
+            source_id=source_id, target_id=target_id, properties=rel_properties
         )
         record = result.single()
         
         if record:
-            return jsonify(dict(record)), 201
+            # Extract all metadata properties from the relationship
+            response_data = dict(record)
+            
+            # Add any metadata back into the response in a structured way
+            metadata = {}
+            for key in rel_properties:
+                if key.startswith('metadata_'):
+                    # Strip the 'metadata_' prefix to get original key
+                    original_key = key[9:]
+                    if key.endswith('_json'):
+                        # Parse JSON for complex types
+                        original_key = original_key[:-5]  # Remove '_json' suffix
+                        try:
+                            metadata[original_key] = json.loads(rel_properties[key])
+                        except (ValueError, TypeError):
+                            metadata[original_key] = rel_properties[key]
+                    else:
+                        metadata[original_key] = rel_properties[key]
+            
+            # Add metadata to response if any exists
+            if metadata:
+                response_data['metadata'] = metadata
+                
+            return jsonify(response_data), 201
         else:
             return jsonify({"error": "Failed to create relationship"}), 500
 
@@ -253,11 +298,40 @@ def get_relationships():
     with get_db_session() as session:
         result = session.run(
             """
-            MATCH (source:NetworkObject)-[r]->(target:NetworkObject)
-            RETURN source.id as source_id, target.id as target_id, type(r) as rel_type
+            MATCH (source:NetworkObject)-[r:CONNECTS]->(target:NetworkObject)
+            RETURN source.id as source_id, target.id as target_id, r.id as id, r.type as type,
+                   properties(r) as properties
             """
         )
-        relationships = [dict(record) for record in result]
+        
+        # Process relationships to extract metadata
+        relationships = []
+        for record in result:
+            rel_data = dict(record)
+            properties = rel_data.pop('properties', {})
+            
+            # Extract metadata into a structured object
+            metadata = {}
+            for key, value in properties.items():
+                if key.startswith('metadata_'):
+                    # Strip the 'metadata_' prefix
+                    orig_key = key[9:]
+                    if key.endswith('_json'):
+                        # Parse JSON for complex values
+                        orig_key = orig_key[:-5]  # Remove '_json' suffix
+                        try:
+                            metadata[orig_key] = json.loads(value)
+                        except (ValueError, TypeError):
+                            metadata[orig_key] = value
+                    else:
+                        metadata[orig_key] = value
+            
+            # Add metadata if it exists
+            if metadata:
+                rel_data['metadata'] = metadata
+                
+            relationships.append(rel_data)
+            
         return jsonify(relationships)
 
 @app.route('/network', methods=['GET'])
@@ -277,18 +351,41 @@ def get_network():
         # Get all relationships
         relationships_result = session.run("""
             MATCH (source:NetworkObject)-[r:CONNECTS]->(target:NetworkObject)
-            RETURN r.id AS id, source.id AS source, target.id AS target, r.type AS type, r.metadata AS metadata
+            RETURN r.id AS id, source.id AS source, target.id AS target, r.type AS type,
+                   properties(r) AS properties
         """)
         
         links = []
         for record in relationships_result:
+            # Extract basic link properties
             link = {
                 "id": record["id"],
                 "source": record["source"],
                 "target": record["target"],
-                "type": record["type"],
-                "metadata": record["metadata"]
+                "type": record["type"]
             }
+            
+            # Process metadata from properties
+            properties = record.get("properties", {})
+            metadata = {}
+            
+            for key, value in properties.items():
+                if key.startswith('metadata_'):
+                    # Strip the 'metadata_' prefix
+                    orig_key = key[9:]
+                    if key.endswith('_json'):
+                        # Parse JSON for complex values
+                        orig_key = orig_key[:-5]  # Remove '_json' suffix
+                        try:
+                            metadata[orig_key] = json.loads(value)
+                        except (ValueError, TypeError):
+                            metadata[orig_key] = value
+                    else:
+                        metadata[orig_key] = value
+            
+            # Add metadata if it exists
+            if metadata:
+                link['metadata'] = metadata
             links.append(link)
         
         # Get all device groups
