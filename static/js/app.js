@@ -16,10 +16,12 @@ document.addEventListener('DOMContentLoaded', function() {
     // API URL (adjust based on your environment)
     const API_URL = '/';
 
-    // Network data
+    // Global variables
     let networkObjects = [];
     let networkRelationships = [];
-
+    let deviceGroups = [];
+    let selectedNodes = [];
+    
     // Force simulation for the network graph
     let simulation;
     let svg;
@@ -34,6 +36,11 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Track grouping strength (adjustable by slider)
     let groupingStrength = 0.1;
+    
+    // Traffic simulation settings
+    let trafficSimulationEnabled = false;
+    let trafficSpeed = 5;
+    let trafficDensity = 3;
     
     // Initialize the application
     init();
@@ -50,6 +57,26 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Create device SVG icons
         createDeviceIcons();
+        
+        // Preload all icons for use
+        preloadIcons(['router', 'switch', 'ap', 'server', 'client', 'nas', 'internet']);
+    }
+    
+    // Preload SVG icons for better performance
+    function preloadIcons(iconTypes) {
+        const iconPromises = iconTypes.map(type => {
+            return fetch(`/static/img/${type === 'ap' ? 'access-point' : type}.svg`)
+                .then(response => response.text())
+                .then(svgText => {
+                    // Store SVG data in memory for quick access
+                    window[`${type}Icon`] = svgText;
+                })
+                .catch(error => console.error(`Error loading ${type} icon:`, error));
+        });
+        
+        Promise.all(iconPromises).then(() => {
+            console.log('All icons loaded successfully');
+        });
     }
 
     function setupNetworkGraph() {
@@ -128,17 +155,49 @@ document.addEventListener('DOMContentLoaded', function() {
         };
     }
 
+    // Load network data from server
     function loadNetworkData() {
-        // Fetch network data from API
         fetch(`${API_URL}network`)
             .then(response => response.json())
             .then(data => {
-                networkObjects = data.objects || [];
-                networkRelationships = data.relationships || [];
-                updateNetworkGraph();
-                updateNodeSelects();
+                // Update global data
+                networkObjects = data.nodes;
+                networkRelationships = data.links;
+                deviceGroups = data.groups || [];
+                
+                // Set initial positions if not already set
+                networkObjects.forEach(node => {
+                    if (node.x === undefined) {
+                        node.x = width / 2 + (Math.random() - 0.5) * width / 2;
+                        node.y = height / 2 + (Math.random() - 0.5) * height / 2;
+                    }
+                });
+                
+                // Set initial positions for device groups if not already set
+                deviceGroups.forEach(group => {
+                    if (group.x === undefined) {
+                        // Calculate position based on member nodes
+                        const memberNodes = networkObjects.filter(node => 
+                            group.nodeIds.includes(node.id)
+                        );
+                        
+                        if (memberNodes.length > 0) {
+                            group.x = memberNodes.reduce((sum, n) => sum + n.x, 0) / memberNodes.length;
+                            group.y = memberNodes.reduce((sum, n) => sum + n.y, 0) / memberNodes.length;
+                        } else {
+                            group.x = width / 2 + (Math.random() - 0.5) * width / 3;
+                            group.y = height / 2 + (Math.random() - 0.5) * height / 3;
+                        }
+                    }
+                });
+                
+                // Update the visualization
+                updateVisualization();
             })
-            .catch(error => console.error('Error loading network data:', error));
+            .catch(error => {
+                console.error('Error loading network data:', error);
+                showToast('Failed to load network data', 'error');
+            });
     }
 
     function updateNetworkGraph() {
@@ -167,18 +226,19 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Add circles to nodes with icons based on type
         nodes.append('circle')
-            .attr('r', 18)
-            .attr('fill', d => getNodeColor(d.type));
+            .attr('r', 20)
+            .attr('fill', d => getNodeColor(d.type))
+            .attr('stroke', '#fff')
+            .attr('stroke-width', 1);
             
-        // Add icons for nodes
-        nodes.append('text')
+        // Add SVG icons for nodes
+        nodes.append('image')
             .attr('class', 'node-icon')
-            .attr('text-anchor', 'middle')
-            .attr('dy', '0.3em')
-            .attr('font-family', 'FontAwesome')
-            .attr('font-size', '14px')
-            .attr('fill', 'white')
-            .text(d => getNodeIcon(d.type));
+            .attr('x', -14)
+            .attr('y', -14)
+            .attr('width', 28)
+            .attr('height', 28)
+            .attr('href', d => getNodeIcon(d.type));
             
         // Add text labels
         nodes.append('text')
@@ -240,6 +300,7 @@ document.addEventListener('DOMContentLoaded', function() {
             ap: '#e74c3c',
             server: '#9b59b6',
             client: '#f39c12',
+            nas: '#8e44ad',
             generic: '#7f8c8d'
         };
         return colors[type] || colors.generic;
@@ -247,13 +308,14 @@ document.addEventListener('DOMContentLoaded', function() {
     
     function getNodeIcon(type) {
         const icons = {
-            router: '🔵', // Router - blue circle
-            switch: '⬛', // Switch - grid
-            ap: '📡',    // Access Point - broadcast icon
-            server: '🖥️', // Server - computer
-            client: '💻'  // Client - laptop
+            router: '/img/router.svg',
+            switch: '/img/switch.svg',
+            ap: '/img/access-point.svg',
+            server: '/img/server.svg',
+            client: '/img/computer.svg',
+            nas: '/img/nas.svg'
         };
-        return icons[type] || '●';
+        return icons[type] || '/img/internet.svg'; // Default icon
     }
     
     function getNetworkDetails(metadata) {
@@ -340,61 +402,42 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function setupEventListeners() {
-        // Add node button event
-        addNodeBtn.addEventListener('click', () => {
-            addNodeModal.style.display = 'block';
-        });
-        
-        // Add connection button event
+        // Modal controls
+        addNodeBtn.addEventListener('click', () => addNodeModal.style.display = 'block');
         addConnectionBtn.addEventListener('click', () => {
             updateNodeSelects();
             addConnectionModal.style.display = 'block';
         });
         
-        // Add node form submission
-        addNodeForm.addEventListener('submit', function(event) {
-            event.preventDefault();
-            addNetworkObject();
-        });
-        
-        // Add connection form submission
-        addConnectionForm.addEventListener('submit', function(event) {
-            event.preventDefault();
-            addNetworkConnection();
-        });
-        
-        // Close modal buttons
+        // Close buttons for modals
         closeButtons.forEach(button => {
-            button.addEventListener('click', function() {
-                this.closest('.modal').style.display = 'none';
+            button.addEventListener('click', () => {
+                addNodeModal.style.display = 'none';
+                addConnectionModal.style.display = 'none';
+                document.getElementById('create-group-modal').style.display = 'none';
             });
         });
         
-        // Close modals when clicking outside
-        window.addEventListener('click', function(event) {
-            if (event.target.classList.contains('modal')) {
-                event.target.style.display = 'none';
+        // Toggle add mode button
+        document.getElementById('toggle-add-mode').addEventListener('click', function() {
+            addMode = !addMode;
+            this.innerText = addMode ? 'Cancel Placement' : 'Click to Place';
+            this.classList.toggle('active', addMode);
+            
+            if (addMode) {
+                showToast('Click on the canvas to place a node');
             }
         });
         
-        // Toggle click-to-place mode
-        document.getElementById('toggle-add-mode').addEventListener('click', function() {
-            addMode = !addMode;
-            this.classList.toggle('active', addMode);
-            document.getElementById('network-graph').classList.toggle('add-mode', addMode);
-            if (addMode) {
-                showToast('Click anywhere on the canvas to place a network object');
-            } else {
-                showToast('Click-to-place mode disabled');
-            }
-        });
+        // Handle form submissions
+        addNodeForm.addEventListener('submit', handleAddNodeFormSubmit);
+        addConnectionForm.addEventListener('submit', handleAddConnectionFormSubmit);
         
         // Device type selection
         deviceTypeItems.forEach(item => {
             item.addEventListener('click', function() {
                 // Remove selected class from all items
                 deviceTypeItems.forEach(i => i.classList.remove('selected'));
-                
                 // Add selected class to clicked item
                 this.classList.add('selected');
                 
@@ -404,6 +447,93 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Show toast notification
                 showToast(`Selected ${selectedDeviceType} device type`);
             });
+        });
+        
+        // Create group button
+        document.getElementById('create-group-btn').addEventListener('click', function() {
+            if (selectedNodes.length < 2) {
+                showToast('Select at least 2 devices to create a group', 'error');
+                return;
+            }
+            
+            // Show create group modal
+            const modal = document.getElementById('create-group-modal');
+            modal.style.display = 'block';
+            
+            // Populate selected devices list
+            const selectedDevicesList = document.getElementById('selected-devices-list');
+            selectedDevicesList.innerHTML = '';
+            
+            selectedNodes.forEach(node => {
+                const deviceItem = document.createElement('div');
+                deviceItem.className = 'selected-device-item';
+                deviceItem.innerHTML = `
+                    <span><div class="device-icon ${node.type}-icon"></div>${node.name || node.id}</span>
+                `;
+                selectedDevicesList.appendChild(deviceItem);
+            });
+        });
+        
+        // Create group form submission
+        document.getElementById('create-group-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const groupName = document.getElementById('group-name').value;
+            createDeviceGroup(selectedNodes, groupName);
+            
+            // Reset and close modal
+            document.getElementById('group-name').value = '';
+            document.getElementById('create-group-modal').style.display = 'none';
+            
+            // Show confirmation
+            showToast(`Group "${groupName}" created with ${selectedNodes.length} devices`);
+            
+            // Clear selection
+            clearNodeSelection();
+            updateVisualization();
+        });
+        
+        // Cancel group button
+        document.getElementById('cancel-group').addEventListener('click', function() {
+            document.getElementById('create-group-modal').style.display = 'none';
+        });
+        
+        // Expand all groups toggle
+        document.getElementById('expand-all-groups').addEventListener('change', function() {
+            const expandAll = this.checked;
+            
+            deviceGroups.forEach(group => {
+                group.expanded = expandAll;
+            });
+            
+            updateVisualization();
+        });
+        
+        // Traffic simulation toggle
+        document.getElementById('traffic-toggle').addEventListener('change', function() {
+            trafficSimulationEnabled = this.checked;
+            
+            if (trafficSimulationEnabled) {
+                startTrafficSimulation();
+            } else {
+                stopTrafficSimulation();
+            }
+        });
+        
+        // Traffic speed control
+        document.getElementById('traffic-speed').addEventListener('input', function() {
+            trafficSpeed = parseInt(this.value);
+            if (trafficSimulationEnabled) {
+                updateTrafficSimulation();
+            }
+        });
+        
+        // Traffic density control
+        document.getElementById('traffic-density').addEventListener('input', function() {
+            trafficDensity = parseInt(this.value);
+            if (trafficSimulationEnabled) {
+                updateTrafficSimulation();
+            }
         });
         
         // Grouping controls
@@ -423,6 +553,61 @@ document.addEventListener('DOMContentLoaded', function() {
             if (document.getElementById('grouping-toggle').checked) {
                 simulation.force('grouping', groupingForce());
                 simulation.alpha(0.3).restart();
+            }
+        });
+        
+        // Add keyboard shortcuts
+        document.addEventListener('keydown', function(event) {
+            // Only process if not in a form field
+            if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
+                return;
+            }
+            
+            // Ctrl+G: Group selected nodes
+            if (event.ctrlKey && event.key === 'g') {
+                event.preventDefault();
+                
+                if (selectedNodes.length >= 2) {
+                    // Show create group modal
+                    document.getElementById('create-group-modal').style.display = 'block';
+                } else {
+                    showToast('Select at least 2 devices to create a group', 'error');
+                }
+            }
+            
+            // Delete: Remove selected nodes
+            if (event.key === 'Delete') {
+                event.preventDefault();
+                
+                if (selectedNodes.length > 0) {
+                    const count = selectedNodes.length;
+                    
+                    // Confirm deletion
+                    if (confirm(`Delete ${count} selected ${count > 1 ? 'devices' : 'device'}?`)) {
+                        // Delete each selected node
+                        const deletePromises = selectedNodes.map(node => 
+                            fetch(`${API_URL}objects/${node.id}`, {
+                                method: 'DELETE'
+                            })
+                        );
+                        
+                        Promise.all(deletePromises)
+                            .then(() => {
+                                showToast(`Deleted ${count} ${count > 1 ? 'devices' : 'device'}`);
+                                loadNetworkData();
+                                clearNodeSelection();
+                            })
+                            .catch(error => {
+                                console.error('Error deleting nodes:', error);
+                                showToast('Error deleting devices', 'error');
+                            });
+                    }
+                }
+            }
+            
+            // Escape: Clear selection
+            if (event.key === 'Escape') {
+                clearNodeSelection();
             }
         });
     }
@@ -704,9 +889,451 @@ document.addEventListener('DOMContentLoaded', function() {
         }, duration);
     }
 
-    // Create SVG icons for devices
+    // Preload SVG icons for devices to ensure they're cached
     function createDeviceIcons() {
-        // This would normally create SVG icons or load them
-        // For now, we'll use CSS background images
+        // List of all icon paths
+        const iconPaths = [
+            '/img/router.svg',
+            '/img/switch.svg',
+            '/img/access-point.svg',
+            '/img/server.svg',
+            '/img/computer.svg',
+            '/img/internet.svg',
+            '/img/nas.svg'
+        ];
+        
+        // Preload each icon
+        iconPaths.forEach(path => {
+            const img = new Image();
+            img.src = path;
+        });
+    }
+    
+    // Create a device group with selected nodes
+    function createDeviceGroup(nodes, name) {
+        // Generate a unique ID for the group
+        const groupId = 'group_' + Date.now();
+        
+        // Create the group object
+        const group = {
+            id: groupId,
+            name: name,
+            nodeIds: nodes.map(n => n.id),
+            expanded: false,
+            // Calculate center position based on member nodes
+            x: nodes.reduce((sum, n) => sum + n.x, 0) / nodes.length,
+            y: nodes.reduce((sum, n) => sum + n.y, 0) / nodes.length,
+        };
+        
+        // Add to groups array
+        deviceGroups.push(group);
+        
+        // Save groups to the database via API
+        fetch(`${API_URL}groups`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(group)
+        })
+        .then(response => response.json())
+        .then(data => {
+            console.log('Group saved:', data);
+        })
+        .catch(error => {
+            console.error('Error saving group:', error);
+        });
+        
+        // Update visualization
+        updateVisualization();
+    }
+    
+    // Handle selection of network nodes
+    function toggleNodeSelection(node) {
+        const index = selectedNodes.findIndex(n => n.id === node.id);
+        
+        if (index === -1) {
+            // Add to selection
+            selectedNodes.push(node);
+            d3.select(`#node-${node.id}`).classed('selected', true);
+        } else {
+            // Remove from selection
+            selectedNodes.splice(index, 1);
+            d3.select(`#node-${node.id}`).classed('selected', false);
+        }
+        
+        // Update UI to reflect selection
+        updateSelectionUI();
+    }
+    
+    // Clear all selected nodes
+    function clearNodeSelection() {
+        // Remove selected class from all nodes
+        d3.selectAll('.network-node').classed('selected', false);
+        
+        // Clear selection array
+        selectedNodes = [];
+        
+        // Update UI
+        updateSelectionUI();
+    }
+    
+    // Update UI elements based on node selection
+    function updateSelectionUI() {
+        const createGroupBtn = document.getElementById('create-group-btn');
+        
+        if (selectedNodes.length >= 2) {
+            createGroupBtn.classList.add('active');
+            createGroupBtn.innerText = `Group ${selectedNodes.length} Devices`;
+        } else {
+            createGroupBtn.classList.remove('active');
+            createGroupBtn.innerText = 'Create Group';
+        }
+    }
+    
+    // Start traffic simulation animation
+    function startTrafficSimulation() {
+        // Clear any existing traffic particles
+        d3.selectAll('.traffic-particle').remove();
+        
+        // Create traffic particles for each relationship
+        networkRelationships.forEach(link => {
+            createTrafficParticles(link);
+        });
+    }
+    
+    // Update traffic simulation based on current settings
+    function updateTrafficSimulation() {
+        if (!trafficSimulationEnabled) return;
+        
+        // Stop current simulation
+        stopTrafficSimulation();
+        
+        // Restart with new settings
+        startTrafficSimulation();
+    }
+    
+    // Stop traffic simulation
+    function stopTrafficSimulation() {
+        // Remove all traffic particles
+        d3.selectAll('.traffic-particle').remove();
+    }
+    
+    // Create traffic particles for a given link
+    function createTrafficParticles(link) {
+        const source = getNodeById(link.source.id || link.source);
+        const target = getNodeById(link.target.id || link.target);
+        
+        // Skip if either node is missing
+        if (!source || !target) return;
+        
+        // Number of particles based on density setting
+        const particleCount = trafficDensity;
+        
+        // Create particles
+        for (let i = 0; i < particleCount; i++) {
+            const particleId = `particle-${link.id}-${i}`;
+            const startPosition = Math.random(); // Random position along the path
+            
+            // Create the particle
+            const particle = svg.select('g').append('circle')
+                .attr('id', particleId)
+                .attr('class', 'traffic-particle')
+                .attr('r', 3)
+                .attr('opacity', 0.7);
+            
+            // Animate the particle
+            animateParticle(particle, link, source, target, startPosition);
+        }
+    }
+    
+    // Animate a traffic particle along a path
+    function animateParticle(particle, link, source, target, startPosition) {
+        // Calculate speed based on settings (slower = longer duration)
+        const duration = 11000 - (trafficSpeed * 1000);
+        
+        function animate() {
+            // Get current source and target positions (they might have moved)
+            const currentSource = getNodeById(link.source.id || link.source);
+            const currentTarget = getNodeById(link.target.id || link.target);
+            
+            particle.transition()
+                .duration(duration)
+                .attrTween('transform', () => {
+                    return (t) => {
+                        // Circular motion for VPN tunnels
+                        if (link.type === 'vpn') {
+                            const x1 = currentSource.x;
+                            const y1 = currentSource.y;
+                            const x2 = currentTarget.x;
+                            const y2 = currentTarget.y;
+                            
+                            // Calculate the midpoint
+                            const mx = (x1 + x2) / 2;
+                            const my = (y1 + y2) / 2;
+                            
+                            // Calculate the distance
+                            const dx = x2 - x1;
+                            const dy = y2 - y1;
+                            const distance = Math.sqrt(dx * dx + dy * dy);
+                            
+                            // Add a curve to the path
+                            const curvature = 0.3;
+                            const cx = mx + curvature * distance * Math.sin(Math.PI / 2);
+                            const cy = my + curvature * distance * Math.sin(Math.PI / 2);
+                            
+                            // Calculate position along the curved path
+                            const point = getBezierPoint(t, x1, y1, cx, cy, x2, y2);
+                            
+                            return `translate(${point.x}, ${point.y})`;
+                        } else {
+                            // Linear motion for other connection types
+                            const x = currentSource.x + (currentTarget.x - currentSource.x) * t;
+                            const y = currentSource.y + (currentTarget.y - currentSource.y) * t;
+                            return `translate(${x}, ${y})`;
+                        }
+                    };
+                })
+                .on('end', () => {
+                    if (trafficSimulationEnabled) {
+                        animate(); // Restart the animation if still enabled
+                    } else {
+                        particle.remove(); // Remove particle if simulation is stopped
+                    }
+                });
+        }
+        
+        // Start the animation with a delay based on start position
+        setTimeout(() => {
+            if (trafficSimulationEnabled) {
+                animate();
+            }
+        }, startPosition * duration);
+    }
+    
+    // Calculate point on bezier curve (for VPN tunnel animation)
+    function getBezierPoint(t, x1, y1, x2, y2, x3, y3) {
+        const t1 = 1 - t;
+        return {
+            x: t1 * t1 * x1 + 2 * t1 * t * x2 + t * t * x3,
+            y: t1 * t1 * y1 + 2 * t1 * t * y2 + t * t * y3
+        };
+    }
+    
+    function updateVisualization() {
+        const container = svg.select('g');
+        
+        // Update links
+        const link = container.selectAll('.link')
+            .data(networkRelationships, d => d.id);
+            
+        // Remove old links
+        link.exit().remove();
+        
+        // Handle different connection types
+        // First, create regular links (non-VPN)
+        const regularLinks = networkRelationships.filter(d => d.type !== 'vpn');
+        const regularLink = container.selectAll('.link:not(.vpn)')
+            .data(regularLinks, d => d.id);
+        
+        // Remove old regular links
+        regularLink.exit().remove();
+        
+        // Create new regular links
+        const regularLinkEnter = regularLink.enter()
+            .append('line')
+            .attr('class', d => `link ${d.type || 'ethernet'}`)
+            .attr('id', d => `link-${d.id}`);
+            
+        // Merge and update all regular links
+        const regularLinkUpdate = regularLinkEnter.merge(regularLink)
+            .attr('x1', d => getNodeById(d.source.id || d.source).x)
+            .attr('y1', d => getNodeById(d.source.id || d.source).y)
+            .attr('x2', d => getNodeById(d.target.id || d.target).x)
+            .attr('y2', d => getNodeById(d.target.id || d.target).y);
+        
+        // Now handle VPN links separately with curved paths
+        const vpnLinks = networkRelationships.filter(d => d.type === 'vpn');
+        const vpnLink = container.selectAll('.link.vpn')
+            .data(vpnLinks, d => d.id);
+        
+        // Remove old VPN links
+        vpnLink.exit().remove();
+        
+        // Create new VPN links
+        const vpnLinkEnter = vpnLink.enter()
+            .append('path')
+            .attr('class', 'link vpn')
+            .attr('id', d => `link-${d.id}`);
+            
+        // Merge and update all VPN links
+        const vpnLinkUpdate = vpnLinkEnter.merge(vpnLink)
+            .attr('d', d => {
+                const source = getNodeById(d.source.id || d.source);
+                const target = getNodeById(d.target.id || d.target);
+                return renderVPNPath(source, target);
+            });
+        
+        // Update device groups
+        const group = container.selectAll('.device-group-container')
+            .data(deviceGroups, d => d.id);
+            
+        // Remove old groups
+        group.exit().remove();
+        
+        // Create new groups
+        const groupEnter = group.enter()
+            .append('g')
+            .attr('class', 'device-group-container')
+            .attr('id', d => `group-${d.id}`);
+        
+        // Add the group circle
+        groupEnter.append('circle')
+            .attr('class', 'device-group')
+            .attr('r', d => calculateGroupRadius(d))
+            .on('dblclick', toggleGroupExpansion);
+            
+        // Add the group label
+        groupEnter.append('text')
+            .attr('class', 'device-group-label')
+            .attr('dy', -10)
+            .text(d => d.name);
+            
+        // Merge and update all groups
+        const groupUpdate = groupEnter.merge(group);
+        
+        groupUpdate.select('circle')
+            .attr('cx', d => d.x)
+            .attr('cy', d => d.y)
+            .attr('r', d => calculateGroupRadius(d))
+            .classed('expanded-group', d => d.expanded);
+            
+        groupUpdate.select('text')
+            .attr('x', d => d.x)
+            .attr('y', d => d.y - calculateGroupRadius(d));
+        
+        // Update nodes
+        const node = container.selectAll('.network-node')
+            .data(networkObjects, d => d.id);
+            
+        // Remove old nodes
+        node.exit().remove();
+        
+        // Create new nodes
+        const nodeEnter = node.enter()
+            .append('g')
+            .attr('class', 'network-node')
+            .attr('id', d => `node-${d.id}`)
+            .call(d3.drag()
+                .on('start', dragstarted)
+                .on('drag', dragged)
+                .on('end', dragended))
+            .on('click', handleNodeClick);
+        
+        // Add node image
+        nodeEnter.append('circle')
+            .attr('class', 'node-border')
+            .attr('r', 25)
+            .attr('fill', 'white')
+            .attr('stroke', getNodeColor)
+            .attr('stroke-width', 2);
+            
+        nodeEnter.append('image')
+            .attr('xlink:href', d => getNodeIcon(d.type))
+            .attr('width', 30)
+            .attr('height', 30)
+            .attr('x', -15)
+            .attr('y', -15);
+            
+        // Add node label
+        nodeEnter.append('text')
+            .attr('class', 'node-label')
+            .attr('text-anchor', 'middle')
+            .attr('dy', 35)
+            .text(d => d.name || d.id);
+        
+        // Add network info label if available
+        nodeEnter.append('text')
+            .attr('class', 'network-info')
+            .attr('text-anchor', 'middle')
+            .attr('dy', 50)
+            .text(d => getNetworkDetails(d.metadata));
+        
+        // Merge and update all nodes
+        const nodeUpdate = nodeEnter.merge(node)
+            .attr('transform', d => {
+                // Check if node is part of a collapsed group
+                const groupContainingNode = deviceGroups.find(g => 
+                    g.nodeIds.includes(d.id) && !g.expanded
+                );
+                
+                if (groupContainingNode) {
+                    // If node is in a collapsed group, position at the group's center
+                    return `translate(${groupContainingNode.x}, ${groupContainingNode.y})`;
+                } else {
+                    // Otherwise, use the node's own position
+                    return `translate(${d.x}, ${d.y})`;
+                }
+            });
+        
+        // Update node visibility based on group expansion state
+        nodeUpdate.style('opacity', d => {
+            const groupContainingNode = deviceGroups.find(g => 
+                g.nodeIds.includes(d.id) && !g.expanded
+            );
+            
+            return groupContainingNode ? 0 : 1;
+        });
+        
+        // Update simulation nodes only when needed
+        if (simulation) {
+            simulation.nodes(networkObjects);
+            simulation.force('link').links(networkRelationships);
+            simulation.alpha(0.3).restart();
+        }
+    }
+    
+    // Calculate the radius for a group based on its members
+    function calculateGroupRadius(group) {
+        const nodeCount = group.nodeIds.length;
+        const baseRadius = 50;
+        const radiusPerNode = 15;
+        
+        return baseRadius + (nodeCount * radiusPerNode / 2);
+    }
+    
+    // Toggle the expansion state of a device group
+    function toggleGroupExpansion(event, group) {
+        // Toggle the expanded state
+        group.expanded = !group.expanded;
+        
+        // Update the visualization
+        updateVisualization();
+        
+        // Restart the simulation
+        simulation.alpha(0.3).restart();
+        
+        // Stop event propagation
+        event.stopPropagation();
+    }
+    
+    // Render a VPN tunnel path between two points
+    function renderVPNPath(source, target) {
+        // Calculate the midpoint
+        const mx = (source.x + target.x) / 2;
+        const my = (source.y + target.y) / 2;
+        
+        // Calculate the distance
+        const dx = target.x - source.x;
+        const dy = target.y - source.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        // Add a curve to the path
+        const curvature = 0.3;
+        const cx = mx - curvature * distance * Math.sin(Math.PI / 2);
+        const cy = my - curvature * distance * Math.sin(Math.PI / 2);
+        
+        // Return the SVG path
+        return `M${source.x},${source.y} Q${cx},${cy} ${target.x},${target.y}`;
     }
 });

@@ -3,6 +3,7 @@ from flask_cors import CORS
 from neo4j import GraphDatabase
 import uuid
 import os
+import datetime
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -31,6 +32,12 @@ def init_db():
     with get_db_session() as session:
         # Create unique constraint on object id
         session.run("CREATE CONSTRAINT IF NOT EXISTS FOR (o:NetworkObject) REQUIRE o.id IS UNIQUE")
+        
+        # Create unique constraint on relationship id
+        session.run("CREATE CONSTRAINT IF NOT EXISTS FOR ()-[r:CONNECTS]-() REQUIRE r.id IS UNIQUE")
+        
+        # Create unique constraint on device group id
+        session.run("CREATE CONSTRAINT IF NOT EXISTS FOR (g:DeviceGroup) REQUIRE g.id IS UNIQUE")
 
 # API endpoints
 @app.route('/objects', methods=['POST'])
@@ -103,7 +110,9 @@ def add_relationship():
     data = request.json
     source_id = data.get('source_id')
     target_id = data.get('target_id')
-    rel_type = data.get('rel_type', 'CONNECTED_TO')
+    relationship_id = data.get('id', str(uuid.uuid4()))
+    connection_type = data.get('type', 'ethernet')
+    metadata = data.get('metadata', {})
     
     if not source_id or not target_id:
         return jsonify({"error": "Source and target IDs are required"}), 400
@@ -114,10 +123,10 @@ def add_relationship():
             """
             MATCH (source:NetworkObject {id: $source_id})
             MATCH (target:NetworkObject {id: $target_id})
-            CREATE (source)-[r:`" + rel_type + "`]->(target)
-            RETURN source.id as source_id, target.id as target_id, type(r) as rel_type
+            CREATE (source)-[r:CONNECTS {id: $id, type: $type, metadata: $metadata}]->(target)
+            RETURN source.id as source, target.id as target, r.id as id, r.type as type
             """,
-            source_id=source_id, target_id=target_id
+            source_id=source_id, target_id=target_id, id=relationship_id, type=connection_type, metadata=metadata
         )
         record = result.single()
         
@@ -141,34 +150,51 @@ def get_relationships():
 @app.route('/network', methods=['GET'])
 def get_network():
     with get_db_session() as session:
+        # Get all objects
         objects_result = session.run("""
             MATCH (o:NetworkObject)
-            WITH o, 
-                 [k in keys(o) WHERE k STARTS WITH 'metadata_'] AS metadata_keys,
-                 o.id as id, o.name as name, o.type as type
-            
-            WITH o, metadata_keys, id, name, type,
-                 apoc.map.fromLists(
-                    [k in metadata_keys | substring(k, 9)],
-                    [k in metadata_keys | o[k]]
-                 ) AS metadata_map
-            
-            RETURN id, name, type, metadata_map as metadata
+            RETURN o
         """)
         
-        rels_result = session.run(
-            """
-            MATCH (source:NetworkObject)-[r]->(target:NetworkObject)
-            RETURN source.id as source_id, target.id as target_id, type(r) as rel_type
-            """
-        )
+        nodes = []
+        for record in objects_result:
+            node = dict(record["o"].items())
+            nodes.append(node)
         
-        objects = [dict(record) for record in objects_result]
-        relationships = [dict(record) for record in rels_result]
+        # Get all relationships
+        relationships_result = session.run("""
+            MATCH (source:NetworkObject)-[r:CONNECTS]->(target:NetworkObject)
+            RETURN r.id AS id, source.id AS source, target.id AS target, r.type AS type, r.metadata AS metadata
+        """)
+        
+        links = []
+        for record in relationships_result:
+            link = {
+                "id": record["id"],
+                "source": record["source"],
+                "target": record["target"],
+                "type": record["type"],
+                "metadata": record["metadata"]
+            }
+            links.append(link)
+        
+        # Get all device groups
+        groups_result = session.run("""
+            MATCH (g:DeviceGroup)
+            OPTIONAL MATCH (g)-[:CONTAINS]->(o:NetworkObject)
+            RETURN g AS group, COLLECT(o.id) AS nodeIds
+        """)
+        
+        groups = []
+        for record in groups_result:
+            group_data = dict(record["group"].items())
+            group_data["nodeIds"] = record["nodeIds"]
+            groups.append(group_data)
         
         return jsonify({
-            'objects': objects,
-            'relationships': relationships
+            "nodes": nodes,
+            "links": links,
+            "groups": groups
         })
 
 @app.route('/objects/<object_id>', methods=['DELETE'])
@@ -248,6 +274,167 @@ def update_object(object_id):
             return jsonify(dict(record)), 200
         else:
             return jsonify({"error": "Object not found"}), 404
+
+@app.route('/groups', methods=['GET'])
+def get_all_groups():
+    with get_db_session() as session:
+        result = session.run("""
+            MATCH (g:DeviceGroup)
+            OPTIONAL MATCH (g)-[:CONTAINS]->(o:NetworkObject)
+            RETURN g AS group, COLLECT(o.id) AS nodeIds
+        """)
+        
+        groups = []
+        for record in result:
+            group_data = record["group"]
+            group = dict(group_data.items())
+            group["nodeIds"] = record["nodeIds"]
+            groups.append(group)
+            
+        return jsonify(groups)
+
+@app.route('/groups', methods=['POST'])
+def create_group():
+    data = request.json
+    group_id = data.get('id', str(uuid.uuid4()))
+    name = data.get('name', 'Unnamed Group')
+    node_ids = data.get('nodeIds', [])
+    x = data.get('x', 0)
+    y = data.get('y', 0)
+    expanded = data.get('expanded', False)
+    
+    with get_db_session() as session:
+        # Create the group node
+        group_result = session.run("""
+            CREATE (g:DeviceGroup {id: $id, name: $name, x: $x, y: $y, expanded: $expanded})
+            RETURN g
+        """, id=group_id, name=name, x=x, y=y, expanded=expanded)
+        
+        # Link the group to its member nodes
+        for node_id in node_ids:
+            session.run("""
+                MATCH (g:DeviceGroup {id: $group_id})
+                MATCH (o:NetworkObject {id: $node_id})
+                CREATE (g)-[:CONTAINS]->(o)
+            """, group_id=group_id, node_id=node_id)
+        
+        # Return the created group
+        group = group_result.single()["g"]
+        return jsonify({
+            "id": group["id"],
+            "name": group["name"],
+            "x": group["x"],
+            "y": group["y"],
+            "expanded": group["expanded"],
+            "nodeIds": node_ids
+        })
+
+@app.route('/groups/<group_id>', methods=['DELETE'])
+def delete_group(group_id):
+    with get_db_session() as session:
+        # Delete the group's relationships first
+        session.run("""
+            MATCH (g:DeviceGroup {id: $id})-[r:CONTAINS]->()
+            DELETE r
+        """, id=group_id)
+        
+        # Delete the group
+        result = session.run("""
+            MATCH (g:DeviceGroup {id: $id})
+            DELETE g
+            RETURN COUNT(g) AS deleted
+        """, id=group_id)
+        
+        count = result.single()["deleted"]
+        if count == 0:
+            return jsonify({"error": "Group not found"}), 404
+        
+        return jsonify({"message": "Group deleted successfully"})
+
+@app.route('/groups/<group_id>', methods=['PATCH'])
+def update_group(group_id):
+    data = request.json
+    updates = {}
+    
+    # Only allow updating specific fields
+    if 'name' in data:
+        updates["name"] = data["name"]
+    if 'x' in data:
+        updates["x"] = data["x"]
+    if 'y' in data:
+        updates["y"] = data["y"]
+    if 'expanded' in data:
+        updates["expanded"] = data["expanded"]
+    
+    update_clause = ", ".join([f"g.{key} = ${key}" for key in updates.keys()])
+    
+    with get_db_session() as session:
+        if update_clause:
+            result = session.run(f"""
+                MATCH (g:DeviceGroup {{id: $id}})
+                SET {update_clause}
+                RETURN g
+            """, id=group_id, **updates)
+        else:
+            result = session.run("""
+                MATCH (g:DeviceGroup {id: $id})
+                RETURN g
+            """, id=group_id)
+        
+        group = result.single()
+        if not group:
+            return jsonify({"error": "Group not found"}), 404
+        
+        # Update node memberships if nodeIds is provided
+        if 'nodeIds' in data:
+            new_node_ids = data['nodeIds']
+            
+            # Remove all existing relationships
+            session.run("""
+                MATCH (g:DeviceGroup {id: $id})-[r:CONTAINS]->()
+                DELETE r
+            """, id=group_id)
+            
+            # Create new relationships
+            for node_id in new_node_ids:
+                session.run("""
+                    MATCH (g:DeviceGroup {id: $group_id})
+                    MATCH (o:NetworkObject {id: $node_id})
+                    CREATE (g)-[:CONTAINS]->(o)
+                """, group_id=group_id, node_id=node_id)
+        
+        # Get the updated group with its node IDs
+        final_result = session.run("""
+            MATCH (g:DeviceGroup {id: $id})
+            OPTIONAL MATCH (g)-[:CONTAINS]->(o:NetworkObject)
+            RETURN g AS group, COLLECT(o.id) AS nodeIds
+        """, id=group_id)
+        
+        record = final_result.single()
+        group_data = dict(record["group"].items())
+        group_data["nodeIds"] = record["nodeIds"]
+        
+        return jsonify(group_data)
+
+@app.route('/healthcheck', methods=['GET'])
+def health_check():
+    try:
+        # Check database connection
+        with get_db_session() as session:
+            result = session.run("RETURN 1 as n")
+            result.single()
+        
+        return jsonify({
+            "status": "ok",
+            "message": "Service is healthy",
+            "timestamp": datetime.datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+            "timestamp": datetime.datetime.now().isoformat()
+        }), 500
 
 # Serve static files
 @app.route('/', defaults={'path': 'index.html'})

@@ -139,10 +139,10 @@ body.add-mode .node {
 .icon {
     width: 24px;
     height: 24px;
-    margin-right: 10px;
     background-size: contain;
     background-repeat: no-repeat;
     background-position: center;
+    margin-right: 8px;
 }
 
 /* Object Inspector */
@@ -367,6 +367,14 @@ body.add-mode .node {
     background-image: url('../img/computer.svg');
 }
 
+.internet-icon {
+    background-image: url('../img/internet.svg');
+}
+
+.nas-icon {
+    background-image: url('../img/nas.svg');
+}
+
 /* Network Details Section */
 .network-details {
     margin-top: 15px;
@@ -468,4 +476,119 @@ input:checked + .slider:before {
 
 .slider.round:before {
     border-radius: 50%;
+}
+
+/* Device Groups */
+.device-group {
+    stroke: #2c3e50;
+    stroke-width: 2px;
+    fill: rgba(236, 240, 241, 0.6);
+    fill-opacity: 0.6;
+    stroke-dasharray: 8, 3;
+}
+
+.device-group-label {
+    font-size: 14px;
+    font-weight: bold;
+    text-anchor: middle;
+    pointer-events: none;
+}
+
+.device-group:hover {
+    fill: rgba(236, 240, 241, 0.8);
+    stroke: #34495e;
+}
+
+.expanded-group {
+    fill: rgba(236, 240, 241, 0.3);
+}
+
+/* Connection Styles */
+.link {
+    stroke-width: 2;
+}
+
+.link.ethernet {
+    stroke: #3498db;
+}
+
+.link.fiber {
+    stroke: #f39c12;
+    stroke-dasharray: 7,3;
+}
+
+.link.wireless {
+    stroke: #9b59b6;
+    stroke-dasharray: 3,3;
+}
+
+.link.vpn {
+    stroke: #2ecc71;
+    stroke-width: 4;
+    stroke-dasharray: 10,4;
+    stroke-linecap: round;
+}
+
+/* Traffic animation particles */
+.traffic-particle {
+    fill: #e74c3c;
+    opacity: 0.7;
+}
+
+/* Device Grouping */
+.device-grouping {
+    padding: 15px;
+    border-top: 1px solid #e0e0e0;
+}
+
+.device-grouping h3 {
+    margin-bottom: 10px;
+    font-size: 16px;
+}
+
+.selected-devices {
+    max-height: 150px;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 8px;
+    margin-top: 5px;
+    background-color: #f9f9f9;
+}
+
+.selected-device-item {
+    padding: 5px;
+    margin: 2px 0;
+    border-radius: 4px;
+    background-color: #eee;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.selected-device-item .device-icon {
+    width: 16px;
+    height: 16px;
+    margin-right: 5px;
+}
+
+.simulation-controls {
+    padding: 15px;
+    border-top: 1px solid #e0e0e0;
+}
+
+.simulation-controls h3 {
+    margin-bottom: 10px;
+    font-size: 16px;
+}
+
+.control-group {
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+}
+
+.control-group label {
+    margin-right: 8px;
+    flex-shrink: 0;
 }
