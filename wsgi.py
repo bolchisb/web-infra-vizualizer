@@ -3,10 +3,12 @@
 
 """WSGI entry point for production deployment with Gunicorn."""
 
-from app import app, init_db
+from app import app
+import sys
 
-# Initialize database when WSGI app starts
-init_db()
+# We no longer initialize the database here
+# Database initialization is now handled by init_schema.py via start.sh
+print("WSGI app initialization - using pre-initialized database")
 
 if __name__ == "__main__":
     app.run()

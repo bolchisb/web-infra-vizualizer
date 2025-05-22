@@ -104,6 +104,8 @@ body.add-mode .node {
 .device-types {
     padding: 15px;
     border-bottom: 1px solid #e0e0e0;
+    position: relative;
+    z-index: 10; /* Ensure it's above other elements */
 }
 
 .device-types h3 {
@@ -114,26 +116,49 @@ body.add-mode .node {
 
 .device-type-list {
     list-style: none;
+    position: relative;
 }
 
-.device-type-list li {
+.device-type-list li,
+.device-type-item {
     display: flex;
     align-items: center;
     padding: 8px 10px;
+    margin: 2px 0;
     cursor: pointer;
     border-radius: 4px;
-    transition: background-color 0.2s;
+    transition: all 0.2s;
+    position: relative;
+    z-index: 5; /* Higher z-index for clickable elements */
+    user-select: none; /* Prevent text selection on click */
 }
 
-.device-type-list li:hover {
+.device-type-list li:hover,
+.device-type-item:hover {
     background-color: #f0f0f0;
+    transform: translateX(2px); /* Slight movement on hover for feedback */
 }
 
-.device-type-list li.selected {
+.device-type-list li.selected,
+.device-type-item.selected {
     background-color: #e3f2fd;
     border-left: 4px solid #2196F3;
     font-weight: bold;
     color: #2196F3;
+    padding-left: 6px; /* Compensate for the border */
+}
+
+.device-type-list li span,
+.device-type-list li .icon,
+.device-label {
+    pointer-events: none; /* Make sure clicks pass through to the li element */
+}
+
+/* Active state for click feedback */
+.device-type-list li:active,
+.device-type-item:active {
+    background-color: #d0d0d0;
+    transform: scale(0.98);
 }
 
 .icon {
@@ -143,6 +168,15 @@ body.add-mode .node {
     background-repeat: no-repeat;
     background-position: center;
     margin-right: 8px;
+    flex-shrink: 0; /* Prevent icon from shrinking */
+    pointer-events: none; /* Let clicks pass through to parent li */
+}
+
+/* Ensure device icons are properly visible and don't block clicks */
+.device-type-list .icon {
+    display: inline-block;
+    min-width: 24px;
+    min-height: 24px;
 }
 
 /* Object Inspector */

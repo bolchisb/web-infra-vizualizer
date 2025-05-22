@@ -373,6 +373,36 @@ For secure network visualization:
    - Inspect Neo4j plugin installation status
    - Verify memory and CPU resources
 
+## 🛠️ Database Initialization 
+
+The application uses Neo4j for storing network topology data. On startup, it automatically initializes the database schema in these steps:
+
+1. First, it attempts normal initialization with appropriate schema constraints
+2. If the initial attempt fails (e.g., due to pre-existing conflicting constraints), it retries in recovery mode
+3. Recovery mode will attempt to clean up problematic constraints before creating the required ones
+
+This robust initialization process handles various Neo4j versions (3.x, 4.x, and 5.x) with appropriate syntax differences.
+
+### Troubleshooting Database Issues
+
+If you encounter database initialization errors:
+
+1. **Check Neo4j Connection**: Make sure Neo4j is running and accessible at the configured URI
+2. **Manual Schema Recovery**: You can trigger schema recovery mode by setting the environment variable:
+   ```
+   NEO4J_SCHEMA_RECOVERY=true
+   ```
+3. **Clearing Constraints**: For a clean start, you can manually clear all constraints in the Neo4j browser:
+   ```cypher
+   CALL apoc.schema.assert({}, {});
+   ```
+   Note: This requires the APOC plugin to be installed.
+4. **Checking Existing Constraints**: View current constraints with:
+   ```cypher
+   SHOW CONSTRAINTS;
+   ```
+5. **Database Logs**: Check Neo4j logs for any underlying connection or permission issues
+
 ### Updating the Application
 
 To update to a new version:

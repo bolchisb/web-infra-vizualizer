@@ -4,6 +4,7 @@ from neo4j import GraphDatabase
 import uuid
 import os
 import datetime
+import time
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -22,22 +23,134 @@ NEO4J_URI = os.environ.get("NEO4J_URI", "bolt://neo4j:7687")
 NEO4J_USER = os.environ.get("NEO4J_USER", "neo4j")
 NEO4J_PASSWORD = os.environ.get("NEO4J_PASSWORD", "password12345678")
 
-driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
+def create_db_driver():
+    """Create Neo4j driver with connection pooling and appropriate timeout settings"""
+    return GraphDatabase.driver(
+        NEO4J_URI, 
+        auth=(NEO4J_USER, NEO4J_PASSWORD),
+        max_connection_lifetime=3600,  # 1 hour
+        max_connection_pool_size=50,
+        connection_acquisition_timeout=60  # Wait up to 60 seconds for a connection
+    )
+
+# Create the global driver instance
+driver = create_db_driver()
 
 def get_db_session():
-    return driver.session()
+    """Get a database session with optional retry on failure"""
+    max_retries = 3
+    retry_delay = 1
+    
+    for attempt in range(max_retries):
+        try:
+            return driver.session()
+        except Exception as e:
+            if attempt < max_retries - 1:
+                print(f"Database connection failed (attempt {attempt+1}/{max_retries}): {e}")
+                time.sleep(retry_delay)
+                # Exponential backoff
+                retry_delay = retry_delay * 2
+            else:
+                print(f"Failed to connect to database after {max_retries} attempts: {e}")
+                raise
 
-# Initialize Neo4j with constraints
+# Initialize Neo4j with constraints - this is now primarily used only for development mode
+# Production initialization is handled by init_schema.py
 def init_db():
-    with get_db_session() as session:
-        # Create unique constraint on object id
-        session.run("CREATE CONSTRAINT IF NOT EXISTS FOR (o:NetworkObject) REQUIRE o.id IS UNIQUE")
-        
-        # Create unique constraint on relationship id
-        session.run("CREATE CONSTRAINT IF NOT EXISTS FOR ()-[r:CONNECTS]-() REQUIRE r.id IS UNIQUE")
-        
-        # Create unique constraint on device group id
-        session.run("CREATE CONSTRAINT IF NOT EXISTS FOR (g:DeviceGroup) REQUIRE g.id IS UNIQUE")
+    """
+    Initialize the database with required constraints.
+    This function is primarily used for development mode or as a fallback.
+    Production initialization is handled by init_schema.py which is more robust.
+    """
+    print("Initializing database from app.py (development mode)")
+    try:
+        with get_db_session() as session:
+            # Check if we can run basic queries first
+            session.run("RETURN 1 as n").single()
+            
+            # Check Neo4j version to determine appropriate constraint syntax
+            neo4j_version = "unknown"
+            try:
+                result = session.run("CALL dbms.components() YIELD name, versions WHERE name = 'Neo4j Kernel' RETURN versions[0] as version")
+                record = result.single()
+                if record:
+                    neo4j_version = record["version"]
+                print(f"Connected to Neo4j version: {neo4j_version}")
+            except Exception:
+                print("Could not determine Neo4j version, using default constraint syntax")
+            
+            # Then check if constraints exist before creating them
+            try:
+                # Get existing constraints - handle different Neo4j versions
+                existing_constraints = []
+                try:
+                    constraints_result = session.run("SHOW CONSTRAINTS")
+                    for record in constraints_result:
+                        if "name" in record:
+                            existing_constraints.append(record["name"].lower())
+                except Exception:
+                    try:
+                        # Alternative for older Neo4j versions
+                        constraints_result = session.run("CALL db.constraints()")
+                        existing_constraints = [str(record).lower() for record in constraints_result]
+                    except Exception as e2:
+                        print(f"Could not get constraints using fallback method: {e2}")
+                
+                print(f"Found existing constraints: {existing_constraints}")
+                
+                # Use explicitly named constraints to avoid duplicates
+                # Handle different Neo4j version syntaxes
+                modern_syntax = not (neo4j_version.startswith("3.") or neo4j_version.startswith("4."))
+                
+                if modern_syntax:
+                    # Neo4j 5.x syntax
+                    if not any("networkobject_id_unique" in constraint for constraint in existing_constraints):
+                        print("Creating networkobject constraint (Neo4j 5.x syntax)")
+                        session.run("CREATE CONSTRAINT networkobject_id_unique IF NOT EXISTS FOR (o:NetworkObject) REQUIRE o.id IS UNIQUE")
+                    
+                    if not any("devicegroup_id_unique" in constraint for constraint in existing_constraints):
+                        print("Creating devicegroup constraint (Neo4j 5.x syntax)")
+                        session.run("CREATE CONSTRAINT devicegroup_id_unique IF NOT EXISTS FOR (g:DeviceGroup) REQUIRE g.id IS UNIQUE")
+                else:
+                    # Neo4j 3.x/4.x syntax
+                    if not any("networkobject_id_unique" in constraint for constraint in existing_constraints):
+                        print("Creating networkobject constraint (Neo4j 3.x/4.x syntax)")
+                        try:
+                            session.run("CREATE CONSTRAINT ON (o:NetworkObject) ASSERT o.id IS UNIQUE")
+                        except Exception as e3:
+                            print(f"Could not create constraint with legacy syntax: {e3}")
+                    
+                    if not any("devicegroup_id_unique" in constraint for constraint in existing_constraints):
+                        print("Creating devicegroup constraint (Neo4j 3.x/4.x syntax)")
+                        try:
+                            session.run("CREATE CONSTRAINT ON (g:DeviceGroup) ASSERT g.id IS UNIQUE")
+                        except Exception as e3:
+                            print(f"Could not create constraint with legacy syntax: {e3}")
+                
+                # Try creating relationship constraint but don't fail if it errors
+                # Some Neo4j versions handle relationship constraints differently
+                try:
+                    if not any("connects_id_unique" in constraint for constraint in existing_constraints):
+                        print("Creating relationship constraint")
+                        if modern_syntax:
+                            session.run("CREATE CONSTRAINT connects_id_unique IF NOT EXISTS FOR ()-[r:CONNECTS]-() REQUIRE r.id IS UNIQUE")
+                        else:
+                            # Create an index instead for older versions
+                            session.run("CREATE INDEX ON :CONNECTS(id)")
+                except Exception as rel_err:
+                    print(f"Note: Relationship constraint creation had an issue: {rel_err}")
+                    print("This is normal for some Neo4j versions - relationships will still work")
+            except Exception as e:
+                print(f"Warning: Error checking constraints: {e}")
+                # Continue as the database might still be functional
+    except Exception as e:
+        # Log the error but don't fail initialization
+        print(f"Warning: Error during database initialization: {e}")
+        # If the schema is already set up or server is not ready, 
+        # we can continue as the app may still function
+        pass
+    
+    print("Database initialization completed (with potential warnings)")
 
 # API endpoints
 @app.route('/objects', methods=['POST'])

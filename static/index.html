@@ -7,6 +7,8 @@
     <link rel="stylesheet" href="css/style.css">
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/lodash@4.17.21/lodash.min.js"></script>
+    <!-- Ensure device selection works properly across all browsers -->
+    <script src="js/device-selection-fix.js"></script>
 </head>
 <body>
     <header>
@@ -22,34 +24,34 @@
         <div class="sidebar">
             <div class="device-types">
                 <h3>Device Types</h3>
-                <ul class="device-type-list">
-                    <li data-type="router" class="selected">
+                <ul class="device-type-list" id="device-type-selector">
+                    <li data-type="router" class="selected device-type-item" tabindex="0" role="button" onclick="window.selectDeviceType(this)">
                         <div class="icon router-icon"></div>
-                        <span>Router</span>
+                        <span class="device-label">Router</span>
                     </li>
-                    <li data-type="switch">
+                    <li data-type="switch" class="device-type-item" tabindex="0" role="button" onclick="window.selectDeviceType(this)">
                         <div class="icon switch-icon"></div>
-                        <span>Switch</span>
+                        <span class="device-label">Switch</span>
                     </li>
-                    <li data-type="ap">
+                    <li data-type="ap" class="device-type-item" tabindex="0" role="button" onclick="window.selectDeviceType(this)">
                         <div class="icon ap-icon"></div>
-                        <span>Access Point</span>
+                        <span class="device-label">Access Point</span>
                     </li>
-                    <li data-type="server">
+                    <li data-type="server" class="device-type-item" tabindex="0" role="button" onclick="window.selectDeviceType(this)">
                         <div class="icon server-icon"></div>
-                        <span>Server</span>
+                        <span class="device-label">Server</span>
                     </li>
-                    <li data-type="client">
+                    <li data-type="client" class="device-type-item" tabindex="0" role="button" onclick="window.selectDeviceType(this)">
                         <div class="icon client-icon"></div>
-                        <span>Client</span>
+                        <span class="device-label">Client</span>
                     </li>
-                    <li data-type="nas">
+                    <li data-type="nas" class="device-type-item" tabindex="0" role="button" onclick="window.selectDeviceType(this)">
                         <div class="icon nas-icon"></div>
-                        <span>NAS</span>
+                        <span class="device-label">NAS</span>
                     </li>
-                    <li data-type="internet">
+                    <li data-type="internet" class="device-type-item" tabindex="0" role="button" onclick="window.selectDeviceType(this)">
                         <div class="icon internet-icon"></div>
-                        <span>Internet</span>
+                        <span class="device-label">Internet</span>
                     </li>
                 </ul>
             </div>

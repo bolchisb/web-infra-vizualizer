@@ -433,21 +433,104 @@ document.addEventListener('DOMContentLoaded', function() {
         addNodeForm.addEventListener('submit', handleAddNodeFormSubmit);
         addConnectionForm.addEventListener('submit', handleAddConnectionFormSubmit);
         
-        // Device type selection
-        deviceTypeItems.forEach(item => {
-            item.addEventListener('click', function() {
-                // Remove selected class from all items
-                deviceTypeItems.forEach(i => i.classList.remove('selected'));
-                // Add selected class to clicked item
-                this.classList.add('selected');
-                
-                // Update selected device type
-                selectedDeviceType = this.getAttribute('data-type');
-                
-                // Show toast notification
-                showToast(`Selected ${selectedDeviceType} device type`);
+        // Global function to select device type (accessible to other scripts)
+        window.selectDeviceType = function(element) {
+            if (!element) return;
+            
+            // Remove selected class from all items
+            document.querySelectorAll('.device-type-list li').forEach(i => i.classList.remove('selected'));
+            
+            // Add selected class to clicked item
+            element.classList.add('selected');
+            
+            // Update selected device type
+            selectedDeviceType = element.getAttribute('data-type');
+            
+            // Force a browser reflow to ensure the style changes take effect
+            void element.offsetWidth;
+            
+            // Show toast notification
+            showToast(`Selected ${selectedDeviceType} device type`);
+            
+            console.log('Device type selected:', selectedDeviceType);
+            
+            // Return the selected type
+            return selectedDeviceType;
+        };
+        
+        // Device type selection - mouse clicks with improved event delegation
+        document.querySelector('.device-type-list').addEventListener('click', function(event) {
+            // Find the clicked li element or its parent if a child was clicked
+            const clickedItem = event.target.closest('li');
+            if (!clickedItem) return; // Exit if click wasn't on or within an li
+            
+            selectDeviceType(clickedItem);
+            
+            // Prevent any potential event bubbling issues
+            event.stopPropagation();
+        });
+        
+        // Add mousedown handler as an alternative
+        document.querySelector('.device-type-list').addEventListener('mousedown', function(event) {
+            // Find the clicked li element or its parent if a child was clicked
+            const clickedItem = event.target.closest('li');
+            if (!clickedItem) return; // Exit if click wasn't on or within an li
+            
+            // Add a small data attribute to track that we've handled this event
+            clickedItem.setAttribute('data-mousedown', 'true');
+            
+            // We'll let the click event handle the actual selection
+            // This is just a backup in case click events are having issues
+        });
+        
+        // Keyboard accessibility for device type selection
+        document.querySelectorAll('.device-type-list li').forEach(item => {
+            item.addEventListener('keydown', function(event) {
+                // Select on Enter or Space key
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    selectDeviceType(this);
+                }
             });
         });
+        
+        // Explicitly mark currently selected device type on load
+        const initialDeviceType = document.querySelector('.device-type-list li.selected');
+        if (initialDeviceType) {
+            selectedDeviceType = initialDeviceType.getAttribute('data-type');
+        }
+        
+        // Add direct click handlers to each device type as a fallback mechanism
+        function setupDirectDeviceClickHandlers() {
+            // Wait for DOM to be fully loaded
+            setTimeout(() => {
+                const deviceTypes = ['router', 'switch', 'ap', 'server', 'client', 'nas', 'internet'];
+                
+                deviceTypes.forEach(type => {
+                    const element = document.querySelector(`.device-type-list li[data-type="${type}"]`);
+                    
+                    if (element) {
+                        // Remove any existing click handlers first
+                        const newElement = element.cloneNode(true);
+                        element.parentNode.replaceChild(newElement, element);
+                        
+                        // Add new direct click handler
+                        newElement.addEventListener('click', function(e) {
+                            console.log(`Direct click on ${type}`);
+                            e.preventDefault();
+                            e.stopPropagation();
+                            selectDeviceType(this);
+                            return false;
+                        });
+                    }
+                });
+                
+                console.log("Direct device click handlers initialized");
+            }, 500);
+        }
+        
+        // Call the fallback setup
+        setupDirectDeviceClickHandlers();
         
         // Create group button
         document.getElementById('create-group-btn').addEventListener('click', function() {
@@ -828,6 +911,36 @@ document.addEventListener('DOMContentLoaded', function() {
             console.error('Error updating network details:', error);
             showToast('Failed to update network details', 'error');
         });
+    }
+    
+    // Handle form submission for adding a new node
+    function handleAddNodeFormSubmit(event) {
+        event.preventDefault();
+        addNetworkObject();
+    }
+    
+    // Handle form submission for adding a new connection
+    function handleAddConnectionFormSubmit(event) {
+        event.preventDefault();
+        addNetworkConnection();
+    }
+    
+    // Handle clicking on a node
+    function handleNodeClick(event, d) {
+        // Prevent event propagation to avoid deselection
+        event.stopPropagation();
+        
+        // Toggle selection if Ctrl/Cmd key is pressed
+        if (event.ctrlKey || event.metaKey) {
+            toggleNodeSelection(d);
+        } else {
+            // Single selection mode - clear other selections
+            clearNodeSelection();
+            toggleNodeSelection(d);
+        }
+        
+        // Show object details in the inspector
+        showObjectDetails(d);
     }
 
     // D3 drag functions

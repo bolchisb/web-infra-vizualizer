@@ -14,6 +14,31 @@ while ! nc -z neo4j 7687; do
     sleep 1
 done
 
+# Ensure Neo4j is not just accepting connections but also ready to process queries
+echo "Neo4j is accepting connections, waiting for service to be fully ready..."
+sleep 5  # Give Neo4j a bit more time to initialize completely
+
+# Initialize database schema separately
+echo "Initializing Neo4j schema..."
+python /app/init_schema.py
+INIT_RESULT=$?
+
+# If initialization fails, retry in recovery mode
+if [ $INIT_RESULT -ne 0 ]; then
+    echo "First schema initialization attempt failed with exit code $INIT_RESULT"
+    echo "Retrying schema initialization in recovery mode..."
+    export NEO4J_SCHEMA_RECOVERY=true
+    python /app/init_schema.py
+    RECOVERY_RESULT=$?
+    
+    if [ $RECOVERY_RESULT -ne 0 ]; then
+        echo "Warning: Neo4j schema recovery also failed with exit code $RECOVERY_RESULT"
+        echo "The application will still try to start, but database operations may fail."
+    else
+        echo "Schema recovery completed successfully."
+    fi
+fi
+
 echo "Neo4j is available, starting application with Gunicorn"
 
 # Get number of workers based on CPU cores (2 * num_cores + 1 is a common formula)
@@ -26,8 +51,14 @@ exec gunicorn \
     --workers $NUM_WORKERS \
     --worker-class gthread \
     --threads 2 \
-    --timeout 60 \
+    --timeout 90 \
+    --max-requests 1000 \
+    --max-requests-jitter 50 \
+    --graceful-timeout 30 \
+    --worker-tmp-dir /dev/shm \
+    --preload \
     --access-logfile - \
     --error-logfile - \
     --log-level info \
+    --capture-output \
     wsgi:app
