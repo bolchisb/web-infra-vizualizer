@@ -389,6 +389,23 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
         
+        // Device type selection
+        deviceTypeItems.forEach(item => {
+            item.addEventListener('click', function() {
+                // Remove selected class from all items
+                deviceTypeItems.forEach(i => i.classList.remove('selected'));
+                
+                // Add selected class to clicked item
+                this.classList.add('selected');
+                
+                // Update selected device type
+                selectedDeviceType = this.getAttribute('data-type');
+                
+                // Show toast notification
+                showToast(`Selected ${selectedDeviceType} device type`);
+            });
+        });
+        
         // Grouping controls
         document.getElementById('grouping-toggle').addEventListener('change', function() {
             // Enable/disable grouping
