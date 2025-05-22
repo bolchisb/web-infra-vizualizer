@@ -1,0 +1,468 @@
+/* CSS Reset and Base Styles */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    line-height: 1.6;
+    color: #333;
+    background-color: #f5f5f5;
+}
+
+button, input, select {
+    font-family: inherit;
+}
+
+/* Layout */
+.container {
+    display: flex;
+    height: calc(100vh - 60px);
+}
+
+header {
+    height: 60px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 20px;
+    background-color: #2c3e50;
+    color: white;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+.logo {
+    font-size: 1.5rem;
+    font-weight: bold;
+}
+
+.actions {
+    display: flex;
+    gap: 10px;
+}
+
+.sidebar {
+    width: 250px;
+    background-color: white;
+    border-right: 1px solid #e0e0e0;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+}
+
+.network-canvas {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background-color: #f9f9f9;
+    background-image: linear-gradient(rgba(0, 0, 0, 0.05) 1px, transparent 1px),
+                     linear-gradient(90deg, rgba(0, 0, 0, 0.05) 1px, transparent 1px);
+    background-size: 20px 20px;
+}
+
+#network-graph {
+    width: 100%;
+    height: 100%;
+}
+
+/* Add Mode Cursor */
+body.add-mode #network-graph {
+    cursor: crosshair;
+}
+
+body.add-mode .node {
+    cursor: pointer;
+}
+
+/* Click-to-place mode */
+#toggle-add-mode.active {
+    background-color: #e74c3c;
+    color: white;
+}
+
+#network-graph.add-mode {
+    cursor: crosshair;
+}
+
+#network-graph.add-mode::after {
+    content: 'Click to place network object';
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: rgba(0,0,0,0.7);
+    color: white;
+    padding: 5px 15px;
+    border-radius: 20px;
+    font-size: 14px;
+    pointer-events: none;
+}
+
+/* Device Types */
+.device-types {
+    padding: 15px;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.device-types h3 {
+    margin-bottom: 15px;
+    font-size: 1rem;
+    color: #555;
+}
+
+.device-type-list {
+    list-style: none;
+}
+
+.device-type-list li {
+    display: flex;
+    align-items: center;
+    padding: 8px 10px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+.device-type-list li:hover {
+    background-color: #f0f0f0;
+}
+
+.device-type-list li.selected {
+    background-color: #e3f2fd;
+}
+
+.icon {
+    width: 24px;
+    height: 24px;
+    margin-right: 10px;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
+/* Object Inspector */
+.object-inspector {
+    padding: 15px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.object-inspector h3 {
+    margin-bottom: 15px;
+    font-size: 1rem;
+    color: #555;
+}
+
+.inspector-content {
+    flex: 1;
+    background-color: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    padding: 10px;
+    overflow-y: auto;
+}
+
+.inspector-content h4 {
+    margin-bottom: 10px;
+    font-size: 1.2rem;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 5px;
+}
+
+.empty-state {
+    color: #999;
+    font-style: italic;
+    text-align: center;
+    padding: 20px 0;
+}
+
+.metadata {
+    margin-top: 15px;
+}
+
+.metadata h5 {
+    margin-bottom: 5px;
+    color: #666;
+}
+
+.metadata pre {
+    background-color: #f9f9f9;
+    border: 1px solid #eee;
+    border-radius: 4px;
+    padding: 8px;
+    font-size: 12px;
+    overflow-x: auto;
+}
+
+.actions {
+    margin-top: 15px;
+    display: flex;
+    gap: 10px;
+}
+
+/* Buttons */
+.btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    background-color: #3498db;
+    color: white;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.btn:hover {
+    background-color: #2980b9;
+}
+
+.btn-primary {
+    background-color: #2980b9;
+}
+
+.btn-delete {
+    background-color: #e74c3c;
+}
+
+.btn-delete:hover {
+    background-color: #c0392b;
+}
+
+/* Active button state */
+.btn.active {
+    background-color: #e74c3c;
+}
+
+.btn.active:hover {
+    background-color: #c0392b;
+}
+
+/* Network Graph Styles */
+.node circle {
+    stroke: #fff;
+    stroke-width: 2px;
+}
+
+.node text.node-label {
+    font-size: 12px;
+    fill: #333;
+    font-weight: bold;
+    pointer-events: none;
+}
+
+.node text.ip-label {
+    font-size: 10px;
+    fill: #555;
+    pointer-events: none;
+}
+
+.node text.node-icon {
+    pointer-events: none;
+}
+
+.link {
+    stroke: #999;
+    stroke-opacity: 0.6;
+    stroke-width: 2px;
+}
+
+/* Modal Styles */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+}
+
+.modal-content {
+    background-color: white;
+    margin: 10% auto;
+    padding: 20px;
+    border-radius: 8px;
+    width: 500px;
+    max-width: 90%;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+}
+
+.close {
+    float: right;
+    font-size: 24px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.form-group {
+    margin-bottom: 15px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 5px;
+    color: #555;
+}
+
+.form-group input,
+.form-group select {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.form-actions {
+    margin-top: 20px;
+    text-align: right;
+}
+
+/* Toast Notifications */
+#toast-container {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 1000;
+}
+
+.toast {
+    background-color: rgba(44, 62, 80, 0.9);
+    color: white;
+    padding: 12px 20px;
+    border-radius: 4px;
+    margin-bottom: 10px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+    transform: translateX(110%);
+    transition: transform 0.3s ease;
+}
+
+.toast.show {
+    transform: translateX(0);
+}
+
+/* Device-specific icons */
+.router-icon {
+    background-image: url('../img/router.svg');
+}
+
+.switch-icon {
+    background-image: url('../img/switch.svg');
+}
+
+.ap-icon {
+    background-image: url('../img/access-point.svg');
+}
+
+.server-icon {
+    background-image: url('../img/server.svg');
+}
+
+.client-icon {
+    background-image: url('../img/computer.svg');
+}
+
+/* Network Details Section */
+.network-details {
+    margin-top: 15px;
+    margin-bottom: 15px;
+    padding: 10px;
+    background-color: #f5f9ff;
+    border-radius: 4px;
+    border: 1px solid #e0e7f2;
+}
+
+.network-details h5 {
+    margin-bottom: 10px;
+    color: #2c3e50;
+}
+
+/* Grouping Controls */
+.grouping-controls {
+    padding: 15px;
+    margin-bottom: 20px;
+    background-color: #fff;
+    border-radius: 5px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.grouping-controls h3 {
+    margin-bottom: 12px;
+    color: #2c3e50;
+    font-size: 16px;
+}
+
+.control-group {
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.control-group label {
+    font-size: 14px;
+    margin-right: 10px;
+}
+
+.control-group input[type="range"] {
+    width: 100px;
+    margin-left: 10px;
+}
+
+/* Toggle Switch */
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 40px;
+    height: 20px;
+}
+
+.switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: .4s;
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 16px;
+    width: 16px;
+    left: 2px;
+    bottom: 2px;
+    background-color: white;
+    transition: .4s;
+}
+
+input:checked + .slider {
+    background-color: #2196F3;
+}
+
+input:focus + .slider {
+    box-shadow: 0 0 1px #2196F3;
+}
+
+input:checked + .slider:before {
+    transform: translateX(20px);
+}
+
+.slider.round {
+    border-radius: 20px;
+}
+
+.slider.round:before {
+    border-radius: 50%;
+}

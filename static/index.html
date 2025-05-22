@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Infrastructure Visualizer</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lodash@4.17.21/lodash.min.js"></script>
+</head>
+<body>
+    <header>
+        <div class="logo">Network Infra Visualizer</div>
+        <div class="actions">
+            <button id="toggle-add-mode" class="btn">Click to Place</button>
+            <button id="add-node-btn" class="btn">Add Node</button>
+            <button id="add-connection-btn" class="btn">Add Connection</button>
+        </div>
+    </header>
+    
+    <div class="container">
+        <div class="sidebar">
+            <div class="device-types">
+                <h3>Device Types</h3>
+                <ul class="device-type-list">
+                    <li data-type="router" class="selected">
+                        <div class="icon router-icon"></div>
+                        <span>Router</span>
+                    </li>
+                    <li data-type="switch">
+                        <div class="icon switch-icon"></div>
+                        <span>Switch</span>
+                    </li>
+                    <li data-type="ap">
+                        <div class="icon ap-icon"></div>
+                        <span>Access Point</span>
+                    </li>
+                    <li data-type="server">
+                        <div class="icon server-icon"></div>
+                        <span>Server</span>
+                    </li>
+                    <li data-type="client">
+                        <div class="icon client-icon"></div>
+                        <span>Client</span>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Add Grouping Controls -->
+            <div class="grouping-controls">
+                <h3>Layout Options</h3>
+                <div class="control-group">
+                    <label for="grouping-toggle">Group by Type:</label>
+                    <label class="switch">
+                        <input type="checkbox" id="grouping-toggle" checked>
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+                <div class="control-group">
+                    <label for="grouping-strength">Grouping Strength:</label>
+                    <input type="range" id="grouping-strength" min="0" max="100" value="50">
+                </div>
+            </div>
+            
+            <div class="object-inspector">
+                <h3>Object Inspector</h3>
+                <div id="inspector-content" class="inspector-content">
+                    <p class="empty-state">Select a network object to view details</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="network-canvas">
+            <div id="network-graph"></div>
+        </div>
+    </div>
+    
+    <!-- Add Node Modal -->
+    <div id="add-node-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Add Network Object</h2>
+            <form id="add-node-form">
+                <div class="form-group">
+                    <label for="node-name">Name:</label>
+                    <input type="text" id="node-name" required>
+                </div>
+                <div class="form-group">
+                    <label for="node-type">Type:</label>
+                    <select id="node-type" required>
+                        <option value="router">Router</option>
+                        <option value="switch">Switch</option>
+                        <option value="ap">Access Point</option>
+                        <option value="server">Server</option>
+                        <option value="client">Client</option>
+                    </select>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Add</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Add Connection Modal -->
+    <div id="add-connection-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Add Connection</h2>
+            <form id="add-connection-form">
+                <div class="form-group">
+                    <label for="source-node">From:</label>
+                    <select id="source-node" required></select>
+                </div>
+                <div class="form-group">
+                    <label for="target-node">To:</label>
+                    <select id="target-node" required></select>
+                </div>
+                <div class="form-group">
+                    <label for="connection-type">Connection Type:</label>
+                    <select id="connection-type" required>
+                        <option value="CONNECTED_TO">Connected To</option>
+                        <option value="CONTROLS">Controls</option>
+                        <option value="ROUTES_TO">Routes To</option>
+                    </select>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Add</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <script src="js/app.js"></script>
+</body>
+</html>
