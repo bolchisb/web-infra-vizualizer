@@ -1,0 +1,10 @@
+FROM neo4j:community-bullseye
+
+# Set environment variables
+ENV NEO4J_apoc_export_file_enabled=true
+ENV NEO4J_apoc_import_file_enabled=true
+ENV NEO4J_apoc_import_file_use__neo4j__config=true
+ENV NEO4J_dbms_security_procedures_unrestricted=apoc.*
+
+# Download APOC plugin
+RUN wget -P /plugins/ https://github.com/neo4j/apoc/releases/download/5.26.6/apoc-5.26.6-core.jar

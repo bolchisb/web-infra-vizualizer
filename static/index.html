@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Infrastructure Visualizer</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lodash@4.17.21/lodash.min.js"></script>
+    <!-- Ensure device selection works properly across all browsers -->
+    <script src="js/device-selection-fix.js"></script>
+</head>
+<body>
+    <header>
+        <div class="logo">Network Infra Visualizer</div>
+        <div class="actions">
+            <button id="toggle-add-mode" class="btn">Click to Place</button>
+            <button id="add-node-btn" class="btn">Add Node</button>
+            <button id="add-connection-btn" class="btn">Add Connection</button>
+        </div>
+    </header>
+    
+    <div class="container">
+        <div class="sidebar">
+            <div class="device-types">
+                <h3>Device Types</h3>
+                <ul class="device-type-list" id="device-type-selector">
+                    <li data-type="router" class="selected device-type-item" tabindex="0" role="button" onclick="window.selectDeviceType(this)">
+                        <div class="icon router-icon"></div>
+                        <span class="device-label">Router</span>
+                    </li>
+                    <li data-type="switch" class="device-type-item" tabindex="0" role="button" onclick="window.selectDeviceType(this)">
+                        <div class="icon switch-icon"></div>
+                        <span class="device-label">Switch</span>
+                    </li>
+                    <li data-type="ap" class="device-type-item" tabindex="0" role="button" onclick="window.selectDeviceType(this)">
+                        <div class="icon ap-icon"></div>
+                        <span class="device-label">Access Point</span>
+                    </li>
+                    <li data-type="server" class="device-type-item" tabindex="0" role="button" onclick="window.selectDeviceType(this)">
+                        <div class="icon server-icon"></div>
+                        <span class="device-label">Server</span>
+                    </li>
+                    <li data-type="client" class="device-type-item" tabindex="0" role="button" onclick="window.selectDeviceType(this)">
+                        <div class="icon client-icon"></div>
+                        <span class="device-label">Client</span>
+                    </li>
+                    <li data-type="nas" class="device-type-item" tabindex="0" role="button" onclick="window.selectDeviceType(this)">
+                        <div class="icon nas-icon"></div>
+                        <span class="device-label">NAS</span>
+                    </li>
+                    <li data-type="internet" class="device-type-item" tabindex="0" role="button" onclick="window.selectDeviceType(this)">
+                        <div class="icon internet-icon"></div>
+                        <span class="device-label">Internet</span>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Add Grouping Controls -->
+            <div class="grouping-controls">
+                <h3>Layout Options</h3>
+                <div class="control-group">
+                    <label for="grouping-toggle">Group by Type:</label>
+                    <label class="switch">
+                        <input type="checkbox" id="grouping-toggle" checked>
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+                <div class="control-group">
+                    <label for="grouping-strength">Grouping Strength:</label>
+                    <input type="range" id="grouping-strength" min="0" max="100" value="50">
+                </div>
+            </div>
+            
+            <!-- Device Grouping Controls -->
+            <div class="device-grouping">
+                <h3>Device Grouping</h3>
+                <button id="create-group-btn" class="btn btn-secondary">Create Group</button>
+                <div class="control-group">
+                    <input type="checkbox" id="expand-all-groups" class="toggle">
+                    <label for="expand-all-groups">Expand All Groups</label>
+                </div>
+            </div>
+            
+            <div class="object-inspector">
+                <h3>Object Inspector</h3>
+                <div id="inspector-content" class="inspector-content">
+                    <p class="empty-state">Select a network object to view details</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="network-canvas">
+            <div id="network-graph"></div>
+        </div>
+    </div>
+    
+    <!-- Add Node Modal -->
+    <div id="add-node-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Add Network Object</h2>
+            <form id="add-node-form">
+                <div class="form-group">
+                    <label for="node-name">Name:</label>
+                    <input type="text" id="node-name" required>
+                </div>
+                <div class="form-group">
+                    <label for="node-type">Type:</label>
+                    <select id="node-type" required>
+                        <option value="router">Router</option>
+                        <option value="switch">Switch</option>
+                        <option value="ap">Access Point</option>
+                        <option value="server">Server</option>
+                        <option value="client">Client</option>
+                    </select>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Add</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Add Connection Modal -->
+    <div id="add-connection-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Add Connection</h2>
+            <form id="add-connection-form">
+                <div class="form-group">
+                    <label for="source-node">From:</label>
+                    <select id="source-node" required></select>
+                </div>
+                <div class="form-group">
+                    <label for="target-node">To:</label>
+                    <select id="target-node" required></select>
+                </div>
+                <div class="form-group">
+                    <label for="connection-type">Connection Type:</label>
+                    <select id="connection-type" required>
+                        <option value="ethernet">Ethernet</option>
+                        <option value="fiber">Fiber Optic</option>
+                        <option value="wireless">Wireless</option>
+                        <option value="vpn">VPN Tunnel</option>
+                    </select>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Add</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Create Group Modal -->
+    <div id="create-group-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Create Device Group</h2>
+                <span class="close">&times;</span>
+            </div>
+            <form id="create-group-form">
+                <div class="form-group">
+                    <label for="group-name">Group Name</label>
+                    <input type="text" id="group-name" placeholder="e.g., Server Rack 1" required>
+                </div>
+                <div class="form-group">
+                    <label>Selected Devices</label>
+                    <div id="selected-devices-list" class="selected-devices">
+                        <!-- Selected devices will be populated here -->
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Create Group</button>
+                    <button type="button" class="btn" id="cancel-group">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <script src="js/app.js"></script>
+</body>
+</html>
