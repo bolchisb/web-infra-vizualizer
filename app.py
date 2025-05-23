@@ -526,28 +526,42 @@ def delete_object(object_id):
 @app.route('/objects/<object_id>', methods=['PATCH'])
 def update_object(object_id):
     data = request.json
+    
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+    
+    # Handle both name and metadata updates
+    update_props = {}
     metadata = data.get('metadata', {})
     
+    # Handle name update
+    if 'name' in data:
+        update_props['name'] = data['name']
+    
+    # Handle type update (if provided)
+    if 'type' in data:
+        update_props['type'] = data['type']
+    
     # Flatten metadata to primitive types
-    flat_properties = {}
     if metadata:
         for key, value in metadata.items():
             if value is not None:  # Only include non-null values
-                flat_properties[f"metadata_{key}"] = value
+                update_props[f"metadata_{key}"] = value
     
-    if not flat_properties:
+    if not update_props:
         return jsonify({"error": "No properties to update"}), 400
     
     with get_db_session() as session:
         # Build the Cypher query to set each property
         set_clauses = []
-        for key in flat_properties:
+        for key in update_props:
             set_clauses.append(f"o.{key} = ${key}")
         
-        # Remove properties that are set to null
-        for key, value in metadata.items():
-            if value is None:
-                set_clauses.append(f"REMOVE o.metadata_{key}")
+        # Remove metadata properties that are set to null
+        if metadata:
+            for key, value in metadata.items():
+                if value is None:
+                    set_clauses.append(f"REMOVE o.metadata_{key}")
         
         query = f"""
             MATCH (o:NetworkObject {{id: $id}})
@@ -565,7 +579,7 @@ def update_object(object_id):
             RETURN id, name, type, metadata_map as metadata
         """
         
-        result = session.run(query, id=object_id, **flat_properties)
+        result = session.run(query, id=object_id, **update_props)
         record = result.single()
         
         if record:

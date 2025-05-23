@@ -63,6 +63,9 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Initialize the inspector panel
         initializeInspector();
+        
+        // Initialize confirmation modal
+        initializeConfirmationModal();
     }
     
     // Initialize the inspector panel with an empty state message
@@ -1016,27 +1019,33 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 if (selectedNodes.length > 0) {
                     const count = selectedNodes.length;
+                    const nodeNames = selectedNodes.map(node => `"${node.name}"`).join(', ');
+                    const deviceText = count > 1 ? 'devices' : 'device';
                     
-                    // Confirm deletion
-                    if (confirm(`Delete ${count} selected ${count > 1 ? 'devices' : 'device'}?`)) {
-                        // Delete each selected node
-                        const deletePromises = selectedNodes.map(node => 
-                            fetch(`${API_URL}objects/${node.id}`, {
-                                method: 'DELETE'
-                            })
-                        );
-                        
-                        Promise.all(deletePromises)
-                            .then(() => {
-                                showToast(`Deleted ${count} ${count > 1 ? 'devices' : 'device'}`);
-                                loadNetworkData();
-                                clearNodeSelection();
-                            })
-                            .catch(error => {
-                                console.error('Error deleting nodes:', error);
-                                showToast('Error deleting devices', 'error');
-                            });
-                    }
+                    showConfirmationModal(
+                        `Delete ${count} ${deviceText}`,
+                        `Are you sure you want to delete ${count > 1 ? 'these' : 'this'} ${deviceText}? ${count <= 3 ? nodeNames : `${count} devices`}`,
+                        'Delete All',
+                        function() {
+                            // Delete each selected node
+                            const deletePromises = selectedNodes.map(node => 
+                                fetch(`${API_URL}objects/${node.id}`, {
+                                    method: 'DELETE'
+                                })
+                            );
+                            
+                            Promise.all(deletePromises)
+                                .then(() => {
+                                    showToast(`Deleted ${count} ${deviceText} successfully`);
+                                    loadNetworkData();
+                                    clearNodeSelection();
+                                })
+                                .catch(error => {
+                                    console.error('Error deleting nodes:', error);
+                                    showToast('Error deleting devices', 'error');
+                                });
+                        }
+                    );
                 }
             }
             
@@ -1082,6 +1091,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (renameNodeBtn) {
             console.log('Found rename-node button, attaching event listener');
             renameNodeBtn.addEventListener('click', function(event) {
+                console.log('=== RENAME NODE BUTTON CLICKED ===');
                 event.stopPropagation(); // Prevent global click handler from firing
                 console.log('Rename node clicked, currentContextNode:', currentContextNode);
                 
@@ -1090,7 +1100,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 console.log('Using context node:', contextNode);
                 
                 if (contextNode) {
+                    console.log('About to call hideAllContextMenus()');
                     hideAllContextMenus();
+                    console.log('About to call showRenameModal with node:', contextNode);
                     showRenameModal(contextNode);
                 } else {
                     console.warn('No current context node set');
@@ -1382,40 +1394,53 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     function deleteNetworkObject(objectId) {
-        if (!confirm('Are you sure you want to delete this object?')) {
-            return;
-        }
+        // Find the object to get its name for the confirmation message
+        const object = networkObjects.find(obj => obj.id === objectId);
+        const objectName = object ? object.name : 'this object';
         
-        // Send delete request to API
-        fetch(`${API_URL}objects/${objectId}`, {
-            method: 'DELETE'
-        })
-        .then(response => {
-            if (response.ok) {
-                // Also remove any relationships involving this object
-                const relatedRelationships = networkRelationships.filter(
-                    r => r.source_id === objectId || r.target_id === objectId
-                );
-                
-                // Remove from local data
-                networkObjects = networkObjects.filter(obj => obj.id !== objectId);
-                networkRelationships = networkRelationships.filter(
-                    r => r.source_id !== objectId && r.target_id !== objectId
-                );
-                
-                // Update visualization
-                updateNetworkGraph();
-                updateNodeSelects();
-                
-                // Reset inspector
-                inspectorContent.innerHTML = '<p class="empty-state">Select a network object to view details</p>';
-                
-                showToast('Network object deleted');
-            } else {
-                console.error('Error deleting network object');
+        showConfirmationModal(
+            'Delete Network Object',
+            `Are you sure you want to delete "${objectName}"? This action cannot be undone.`,
+            'Delete',
+            function() {
+                // This function will be called when user confirms
+                // Send delete request to API
+                fetch(`${API_URL}objects/${objectId}`, {
+                    method: 'DELETE'
+                })
+                .then(response => {
+                    if (response.ok) {
+                        // Also remove any relationships involving this object
+                        const relatedRelationships = networkRelationships.filter(
+                            r => r.source_id === objectId || r.target_id === objectId
+                        );
+                        
+                        // Remove from local data
+                        networkObjects = networkObjects.filter(obj => obj.id !== objectId);
+                        networkRelationships = networkRelationships.filter(
+                            r => r.source_id !== objectId && r.target_id !== objectId
+                        );
+                        
+                        // Update visualization
+                        updateNetworkGraph();
+                        updateNodeSelects();
+                        
+                        // Reset inspector
+                        inspectorContent.innerHTML = '<p class="empty-state">Select a network object to view details</p>';
+                        hideInspector();
+                        
+                        showToast(`"${objectName}" deleted successfully`);
+                    } else {
+                        console.error('Error deleting network object');
+                        showToast('Failed to delete network object', 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error deleting network object:', error);
+                    showToast('Failed to delete network object: ' + error.message, 'error');
+                });
             }
-        })
-        .catch(error => console.error('Error deleting network object:', error));
+        );
     }
 
     function updateNetworkDetails(objectId, ipAddress, netmask) {
@@ -2297,7 +2322,10 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('Found modal:', modal, 'input:', input);
         
         if (modal && input) {
+            // Ensure we set the current context node
             currentContextNode = node;
+            console.log('Set currentContextNode to:', currentContextNode);
+            
             input.value = node.name || '';
             modal.style.display = 'flex';
             input.focus();
@@ -2434,30 +2462,116 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     function deleteConnection(connectionId) {
-        if (!confirm('Are you sure you want to delete this connection?')) {
-            return;
+        // Find the connection to get details for the confirmation message
+        const connection = networkRelationships.find(rel => rel.id === connectionId);
+        let connectionDesc = 'this connection';
+        
+        if (connection) {
+            const sourceNode = getNodeById(connection.source_id);
+            const targetNode = getNodeById(connection.target_id);
+            const sourceName = sourceNode ? sourceNode.name : 'Unknown';
+            const targetName = targetNode ? targetNode.name : 'Unknown';
+            connectionDesc = `the ${connection.type} connection between "${sourceName}" and "${targetName}"`;
         }
         
-        fetch(`${API_URL}relationships/${connectionId}`, {
-            method: 'DELETE'
-        })
-        .then(response => {
-            if (response.ok) {
-                // Remove from local data
-                networkRelationships = networkRelationships.filter(rel => rel.id !== connectionId);
-                
-                // Update visualization
-                updateNetworkGraph();
-                
-                showToast('Connection deleted');
-            } else {
-                console.error('Error deleting connection');
-                showToast('Failed to delete connection', 'error');
+        showConfirmationModal(
+            'Delete Connection',
+            `Are you sure you want to delete ${connectionDesc}? This action cannot be undone.`,
+            'Delete',
+            function() {
+                // This function will be called when user confirms
+                fetch(`${API_URL}relationships/${connectionId}`, {
+                    method: 'DELETE'
+                })
+                .then(response => {
+                    if (response.ok) {
+                        // Remove from local data
+                        networkRelationships = networkRelationships.filter(rel => rel.id !== connectionId);
+                        
+                        // Update visualization
+                        updateNetworkGraph();
+                        
+                        showToast('Connection deleted successfully');
+                    } else {
+                        console.error('Error deleting connection');
+                        showToast('Failed to delete connection', 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error deleting connection:', error);
+                    showToast('Failed to delete connection: ' + error.message, 'error');
+                });
             }
-        })
-        .catch(error => {
-            console.error('Error deleting connection:', error);
-            showToast('Failed to delete connection: ' + error.message, 'error');
+        );
+    }
+
+    // Custom Confirmation Modal Functions
+    let currentConfirmationCallback = null;
+    
+    function showConfirmationModal(title, message, confirmText = 'Delete', onConfirm) {
+        const modal = document.getElementById('confirmation-modal');
+        const titleElement = document.getElementById('confirmation-title');
+        const messageElement = document.getElementById('confirmation-message');
+        const confirmButton = document.getElementById('confirmation-confirm');
+        
+        if (modal && titleElement && messageElement && confirmButton) {
+            titleElement.textContent = title;
+            messageElement.textContent = message;
+            confirmButton.textContent = confirmText;
+            
+            // Store the callback
+            currentConfirmationCallback = onConfirm;
+            
+            // Show the modal
+            modal.style.display = 'block';
+            
+            // Add a slight delay to trigger the animation
+            setTimeout(() => {
+                modal.classList.add('show');
+            }, 10);
+        }
+    }
+    
+    function hideConfirmationModal() {
+        const modal = document.getElementById('confirmation-modal');
+        if (modal) {
+            modal.classList.remove('show');
+            modal.style.display = 'none';
+            currentConfirmationCallback = null;
+        }
+    }
+    
+    // Initialize confirmation modal event listeners
+    function initializeConfirmationModal() {
+        const cancelButton = document.getElementById('confirmation-cancel');
+        const confirmButton = document.getElementById('confirmation-confirm');
+        const overlay = document.querySelector('.confirmation-overlay');
+        
+        if (cancelButton) {
+            cancelButton.addEventListener('click', hideConfirmationModal);
+        }
+        
+        if (confirmButton) {
+            confirmButton.addEventListener('click', function() {
+                if (currentConfirmationCallback) {
+                    currentConfirmationCallback();
+                }
+                hideConfirmationModal();
+            });
+        }
+        
+        if (overlay) {
+            overlay.addEventListener('click', hideConfirmationModal);
+        }
+        
+        // Close on Escape key
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                const modal = document.getElementById('confirmation-modal');
+                if (modal && modal.style.display === 'block') {
+                    hideConfirmationModal();
+                }
+            }
         });
     }
 });
