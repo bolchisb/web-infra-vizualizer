@@ -37,11 +37,6 @@ document.addEventListener('DOMContentLoaded', function() {
     // Track grouping strength (adjustable by slider)
     let groupingStrength = 0.1;
     
-    // Traffic simulation settings
-    let trafficSimulationEnabled = false;
-    let trafficSpeed = 5;
-    let trafficDensity = 3;
-    
     // Initialize the application
     init();
 
@@ -92,11 +87,14 @@ document.addEventListener('DOMContentLoaded', function() {
         // Create a container group for all elements
         const container = svg.append('g');
         
-        // Handle click on canvas for adding nodes
+        // Handle click on canvas for adding nodes or deselecting
         svg.on('click', function(event) {
             if (addMode) {
                 const coords = d3.pointer(event);
                 addNodeAtPosition(coords[0], coords[1]);
+            } else {
+                // Clicking on the background deselects all nodes
+                clearNodeSelection();
             }
         });
         
@@ -158,20 +156,34 @@ document.addEventListener('DOMContentLoaded', function() {
     // Load network data from server
     function loadNetworkData() {
         fetch(`${API_URL}network`)
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`Failed to load network data: ${response.status} ${response.statusText}`);
+                }
+                return response.json();
+            })
             .then(data => {
+                console.log('Network data loaded:', data);
                 // Update global data
                 networkObjects = data.nodes;
                 deviceGroups = data.groups || [];
                 
+                // Initialize groups to expanded state
+                initializeGroups();
+                
                 // Process relationships to include direct node references
                 networkRelationships = data.links.map(link => {
-                    const sourceNode = networkObjects.find(n => n.id === link.source_id);
-                    const targetNode = networkObjects.find(n => n.id === link.target_id);
+                    const sourceNode = networkObjects.find(n => n.id === link.source);
+                    const targetNode = networkObjects.find(n => n.id === link.target);
+                    
+                    // Create a relationship object that works for both the API and the visualization
                     return {
-                        ...link,
-                        source: sourceNode || { id: link.source_id },
-                        target: targetNode || { id: link.target_id }
+                        id: link.id,
+                        source_id: link.source, // Keep original IDs
+                        target_id: link.target,
+                        source: sourceNode || { id: link.source }, // For D3 visualization
+                        target: targetNode || { id: link.target },
+                        type: link.type
                     };
                 });
                 
@@ -206,7 +218,7 @@ document.addEventListener('DOMContentLoaded', function() {
             })
             .catch(error => {
                 console.error('Error loading network data:', error);
-                showToast('Failed to load network data', 'error');
+                showToast('Failed to load network data: ' + error.message, 'error');
             });
     }
 
@@ -289,11 +301,7 @@ document.addEventListener('DOMContentLoaded', function() {
         simulation.alpha(0.8).restart();
         
         // Node click handler
-        nodes.on('click', (event, d) => {
-            // Prevent event bubbling up to SVG
-            event.stopPropagation();
-            showObjectDetails(d);
-        });
+        nodes.on('click', handleNodeClick);
     }
 
     function getNodeById(id) {
@@ -442,7 +450,7 @@ document.addEventListener('DOMContentLoaded', function() {
         addConnectionForm.addEventListener('submit', handleAddConnectionFormSubmit);
         
         // Global function to select device type (accessible to other scripts)
-        window.selectDeviceType = function(element) {
+        window.selectDeviceType = function(element, suppressNotification = false) {
             if (!element) return;
             
             // Remove selected class from all items
@@ -457,8 +465,10 @@ document.addEventListener('DOMContentLoaded', function() {
             // Force a browser reflow to ensure the style changes take effect
             void element.offsetWidth;
             
-            // Show toast notification
-            showToast(`Selected ${selectedDeviceType} device type`);
+            // Show toast notification (only if not suppressed)
+            if (!suppressNotification) {
+                showToast(`Selected ${selectedDeviceType} device type`);
+            }
             
             console.log('Device type selected:', selectedDeviceType);
             
@@ -508,41 +518,12 @@ document.addEventListener('DOMContentLoaded', function() {
             selectedDeviceType = initialDeviceType.getAttribute('data-type');
         }
         
-        // Add direct click handlers to each device type as a fallback mechanism
-        function setupDirectDeviceClickHandlers() {
-            // Wait for DOM to be fully loaded
-            setTimeout(() => {
-                const deviceTypes = ['router', 'switch', 'ap', 'server', 'client', 'nas', 'internet'];
-                
-                deviceTypes.forEach(type => {
-                    const element = document.querySelector(`.device-type-list li[data-type="${type}"]`);
-                    
-                    if (element) {
-                        // Remove any existing click handlers first
-                        const newElement = element.cloneNode(true);
-                        element.parentNode.replaceChild(newElement, element);
-                        
-                        // Add new direct click handler
-                        newElement.addEventListener('click', function(e) {
-                            console.log(`Direct click on ${type}`);
-                            e.preventDefault();
-                            e.stopPropagation();
-                            selectDeviceType(this);
-                            return false;
-                        });
-                    }
-                });
-                
-                console.log("Direct device click handlers initialized");
-            }, 500);
-        }
-        
-        // Call the fallback setup
-        setupDirectDeviceClickHandlers();
-        
-        // Create group button
+        // Create group button with improved debugging
         document.getElementById('create-group-btn').addEventListener('click', function() {
+            console.log("Create group button clicked. Selected nodes:", selectedNodes);
+            
             if (selectedNodes.length < 2) {
+                console.warn("Not enough nodes selected for grouping");
                 showToast('Select at least 2 devices to create a group', 'error');
                 return;
             }
@@ -556,6 +537,7 @@ document.addEventListener('DOMContentLoaded', function() {
             selectedDevicesList.innerHTML = '';
             
             selectedNodes.forEach(node => {
+                console.log("Adding node to device list:", node.name || node.id);
                 const deviceItem = document.createElement('div');
                 deviceItem.className = 'selected-device-item';
                 deviceItem.innerHTML = `
@@ -598,33 +580,6 @@ document.addEventListener('DOMContentLoaded', function() {
             });
             
             updateVisualization();
-        });
-        
-        // Traffic simulation toggle
-        document.getElementById('traffic-toggle').addEventListener('change', function() {
-            trafficSimulationEnabled = this.checked;
-            
-            if (trafficSimulationEnabled) {
-                startTrafficSimulation();
-            } else {
-                stopTrafficSimulation();
-            }
-        });
-        
-        // Traffic speed control
-        document.getElementById('traffic-speed').addEventListener('input', function() {
-            trafficSpeed = parseInt(this.value);
-            if (trafficSimulationEnabled) {
-                updateTrafficSimulation();
-            }
-        });
-        
-        // Traffic density control
-        document.getElementById('traffic-density').addEventListener('input', function() {
-            trafficDensity = parseInt(this.value);
-            if (trafficSimulationEnabled) {
-                updateTrafficSimulation();
-            }
         });
         
         // Grouping controls
@@ -814,6 +769,9 @@ document.addEventListener('DOMContentLoaded', function() {
             type: relType  // Using 'type' to match backend expectations
         };
         
+        // Log the request for debugging
+        console.log('Sending relationship data:', relationshipData);
+        
         // Send to API
         fetch(`${API_URL}relationships`, {
             method: 'POST',
@@ -822,8 +780,16 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             body: JSON.stringify(relationshipData),
         })
-        .then(response => response.json())
+        .then(response => {
+            // Check for network or server errors
+            if (!response.ok) {
+                throw new Error(`Server responded with status: ${response.status}`);
+            }
+            return response.json();
+        })
         .then(data => {
+            console.log('Connection created successfully:', data);
+            
             // Find the actual node objects
             const sourceNode = getNodeById(sourceId);
             const targetNode = getNodeById(targetId);
@@ -832,13 +798,14 @@ document.addEventListener('DOMContentLoaded', function() {
             const relationshipWithRefs = {
                 ...data,
                 source: sourceNode,
-                target: targetNode
+                target: targetNode,
+                // Ensure these properties exist for compatibility
+                source_id: sourceId,
+                target_id: targetId
             };
             
+            // Add to relationships array
             networkRelationships.push(relationshipWithRefs);
-            
-            // Update visualization
-            updateNetworkGraph();
             
             // Reset and close form
             addConnectionForm.reset();
@@ -848,8 +815,19 @@ document.addEventListener('DOMContentLoaded', function() {
             const source = networkObjects.find(o => o.id === data.source_id);
             const target = networkObjects.find(o => o.id === data.target_id);
             showToast(`Connected ${source?.name} to ${target?.name}`);
+            
+            // Clear the entire svg container and redraw everything from scratch
+            // This ensures no residual elements remain
+            const container = svg.select('g');
+            container.selectAll('*').remove();
+            
+            // Update visualization with a full refresh
+            updateNetworkGraph();
         })
-        .catch(error => console.error('Error adding relationship:', error));
+        .catch(error => {
+            console.error('Error adding relationship:', error);
+            showToast('Failed to create connection: ' + error.message, 'error');
+        });
     }
     
     function deleteNetworkObject(objectId) {
@@ -955,30 +933,107 @@ document.addEventListener('DOMContentLoaded', function() {
             // Single selection mode - clear other selections
             clearNodeSelection();
             toggleNodeSelection(d);
+            
+            // Flash the selected node to give immediate feedback
+            const nodeElement = document.getElementById(`node-${d.id}`);
+            if (nodeElement) {
+                // Add a flash animation class
+                nodeElement.classList.add('flash-highlight');
+                // Remove it after animation completes
+                setTimeout(() => {
+                    nodeElement.classList.remove('flash-highlight');
+                }, 500);
+            }
         }
         
         // Show object details in the inspector
         showObjectDetails(d);
+        
+        // Debug selection state
+        console.log(`Selection state after click:`, selectedNodes.map(n => n.name || n.id));
+        
+        // Clear the entire svg container and redraw everything from scratch
+        // This ensures no residual elements remain after selection
+        const container = svg.select('g');
+        container.selectAll('*').remove();
+        
+        // Update visualization with a full refresh
+        updateNetworkGraph();
     }
 
     // D3 drag functions
     function dragstarted(event, d) {
+        // When drag starts, activate the force simulation if it's not already active
         if (!event.active) simulation.alphaTarget(0.3).restart();
+        // Set fixed position during drag
         d.fx = d.x;
         d.fy = d.y;
+        
+        // Store the node being dragged for group movement
+        window.draggedNode = d;
     }
 
     function dragged(event, d) {
+        // Update fixed position during drag
         d.fx = event.x;
         d.fy = event.y;
+        
+        // Check if node is in a group and update the group position to follow node
+        const nodeGroups = deviceGroups.filter(g => 
+            g.nodeIds && g.nodeIds.includes(d.id) && g.expanded
+        );
+        
+        if (nodeGroups.length > 0) {
+            // Update all containing groups
+            nodeGroups.forEach(group => {
+                // Calculate the new center position based on all group members
+                const groupMembers = networkObjects.filter(n => group.nodeIds.includes(n.id));
+                if (groupMembers.length > 0) {
+                    const newX = groupMembers.reduce((sum, n) => sum + (n.fx || n.x), 0) / groupMembers.length;
+                    const newY = groupMembers.reduce((sum, n) => sum + (n.fy || n.y), 0) / groupMembers.length;
+                    
+                    // Update group position
+                    group.x = newX;
+                    group.y = newY;
+                }
+            });
+        }
+        
+        // Clear the entire svg container and redraw everything from scratch
+        // This ensures no residual elements remain during drag
+        const container = svg.select('g');
+        container.selectAll('*').remove();
+        
+        // Update visualization with a full refresh
+        updateNetworkGraph();
+        
+        // Let the simulation handle position updates with minimal energy
+        simulation.alpha(0.1).restart();
     }
 
     function dragended(event, d) {
+        // When drag ends, reset alpha target so the simulation cools
         if (!event.active) simulation.alphaTarget(0);
+        
+        // Unfix node position to allow it to float around after dragging
         d.fx = null;
         d.fy = null;
+        
+        // Clear the dragged node reference
+        window.draggedNode = null;
+        
+        // Clear the entire svg container and redraw everything from scratch
+        // This ensures no residual elements remain after drag ends
+        const container = svg.select('g');
+        container.selectAll('*').remove();
+        
+        // Do a final complete update to fix any visual artifacts
+        updateNetworkGraph();
+        
+        // Add a burst of energy to the simulation so nodes can start moving
+        simulation.alpha(0.3).restart();
     }
-
+    
     // Helper functions
     function generateUUID() {
         return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
@@ -1042,15 +1097,22 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Create a device group with selected nodes
     function createDeviceGroup(nodes, name) {
+        if (!nodes || nodes.length < 1) {
+            console.error("Cannot create group: No nodes provided");
+            return;
+        }
+        
         // Generate a unique ID for the group
         const groupId = 'group_' + Date.now();
+        
+        console.log(`Creating group "${name}" with ${nodes.length} nodes:`, nodes.map(n => n.name || n.id));
         
         // Create the group object
         const group = {
             id: groupId,
             name: name,
             nodeIds: nodes.map(n => n.id),
-            expanded: false,
+            expanded: true,  // Default to expanded state for visibility
             // Calculate center position based on member nodes
             x: nodes.reduce((sum, n) => sum + n.x, 0) / nodes.length,
             y: nodes.reduce((sum, n) => sum + n.y, 0) / nodes.length,
@@ -1058,6 +1120,8 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Add to groups array
         deviceGroups.push(group);
+        
+        console.log(`Group created successfully:`, group);
         
         // Save groups to the database via API
         fetch(`${API_URL}groups`, {
@@ -1067,12 +1131,19 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             body: JSON.stringify(group)
         })
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Failed to save group: ${response.status}`);
+            }
+            return response.json();
+        })
         .then(data => {
-            console.log('Group saved:', data);
+            console.log('Group saved to API:', data);
+            showToast(`Group "${name}" created successfully`);
         })
         .catch(error => {
             console.error('Error saving group:', error);
+            showToast(`Error saving group: ${error.message}`, 'error');
         });
         
         // Update visualization
@@ -1081,16 +1152,56 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Handle selection of network nodes
     function toggleNodeSelection(node) {
+        if (!node || !node.id) {
+            console.error("Invalid node passed to toggleNodeSelection:", node);
+            return;
+        }
+
         const index = selectedNodes.findIndex(n => n.id === node.id);
         
         if (index === -1) {
             // Add to selection
             selectedNodes.push(node);
-            d3.select(`#node-${node.id}`).classed('selected', true);
+            console.log(`Added node ${node.name || node.id} to selection`);
+            
+            // Apply visual selection feedback
+            try {
+                // D3 selection
+                d3.select(`#node-${node.id}`).classed('selected', true);
+                
+                // Direct DOM manipulation for fallback
+                const nodeElement = document.getElementById(`node-${node.id}`);
+                if (nodeElement) {
+                    nodeElement.classList.add('selected');
+                    
+                    // Add a brief scaling effect for immediate feedback
+                    const currentTransform = nodeElement.getAttribute('transform') || '';
+                    nodeElement.setAttribute('transform', currentTransform + ' scale(1.2)');
+                    setTimeout(() => {
+                        nodeElement.setAttribute('transform', currentTransform);
+                    }, 300);
+                }
+            } catch (e) {
+                console.error("Error applying selection:", e);
+            }
         } else {
             // Remove from selection
             selectedNodes.splice(index, 1);
-            d3.select(`#node-${node.id}`).classed('selected', false);
+            console.log(`Removed node ${node.name || node.id} from selection`);
+            
+            // Remove visual feedback
+            try {
+                // D3 selection
+                d3.select(`#node-${node.id}`).classed('selected', false);
+                
+                // Direct DOM manipulation for fallback
+                const nodeElement = document.getElementById(`node-${node.id}`);
+                if (nodeElement) {
+                    nodeElement.classList.remove('selected');
+                }
+            } catch (e) {
+                console.error("Error removing selection:", e);
+            }
         }
         
         // Update UI to reflect selection
@@ -1101,6 +1212,11 @@ document.addEventListener('DOMContentLoaded', function() {
     function clearNodeSelection() {
         // Remove selected class from all nodes
         d3.selectAll('.network-node').classed('selected', false);
+        
+        // Also remove the class from DOM elements directly
+        document.querySelectorAll('.network-node').forEach(node => {
+            node.classList.remove('selected');
+        });
         
         // Clear selection array
         selectedNodes = [];
@@ -1113,6 +1229,8 @@ document.addEventListener('DOMContentLoaded', function() {
     function updateSelectionUI() {
         const createGroupBtn = document.getElementById('create-group-btn');
         
+        console.log(`updateSelectionUI: ${selectedNodes.length} nodes selected`);
+        
         if (selectedNodes.length >= 2) {
             createGroupBtn.classList.add('active');
             createGroupBtn.innerText = `Group ${selectedNodes.length} Devices`;
@@ -1122,137 +1240,11 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // Start traffic simulation animation
-    function startTrafficSimulation() {
-        // Clear any existing traffic particles
-        d3.selectAll('.traffic-particle').remove();
-        
-        // Create traffic particles for each relationship
-        networkRelationships.forEach(link => {
-            createTrafficParticles(link);
-        });
-    }
-    
-    // Update traffic simulation based on current settings
-    function updateTrafficSimulation() {
-        if (!trafficSimulationEnabled) return;
-        
-        // Stop current simulation
-        stopTrafficSimulation();
-        
-        // Restart with new settings
-        startTrafficSimulation();
-    }
-    
-    // Stop traffic simulation
-    function stopTrafficSimulation() {
-        // Remove all traffic particles
-        d3.selectAll('.traffic-particle').remove();
-    }
-    
-    // Create traffic particles for a given link
-    function createTrafficParticles(link) {
-        const source = getNodeById(link.source.id || link.source);
-        const target = getNodeById(link.target.id || link.target);
-        
-        // Skip if either node is missing
-        if (!source || !target) return;
-        
-        // Number of particles based on density setting
-        const particleCount = trafficDensity;
-        
-        // Create particles
-        for (let i = 0; i < particleCount; i++) {
-            const particleId = `particle-${link.id}-${i}`;
-            const startPosition = Math.random(); // Random position along the path
-            
-            // Create the particle
-            const particle = svg.select('g').append('circle')
-                .attr('id', particleId)
-                .attr('class', 'traffic-particle')
-                .attr('r', 3)
-                .attr('opacity', 0.7);
-            
-            // Animate the particle
-            animateParticle(particle, link, source, target, startPosition);
-        }
-    }
-    
-    // Animate a traffic particle along a path
-    function animateParticle(particle, link, source, target, startPosition) {
-        // Calculate speed based on settings (slower = longer duration)
-        const duration = 11000 - (trafficSpeed * 1000);
-        
-        function animate() {
-            // Get current source and target positions (they might have moved)
-            const currentSource = getNodeById(link.source.id || link.source);
-            const currentTarget = getNodeById(link.target.id || link.target);
-            
-            particle.transition()
-                .duration(duration)
-                .attrTween('transform', () => {
-                    return (t) => {
-                        // Circular motion for VPN tunnels
-                        if (link.type === 'vpn') {
-                            const x1 = currentSource.x;
-                            const y1 = currentSource.y;
-                            const x2 = currentTarget.x;
-                            const y2 = currentTarget.y;
-                            
-                            // Calculate the midpoint
-                            const mx = (x1 + x2) / 2;
-                            const my = (y1 + y2) / 2;
-                            
-                            // Calculate the distance
-                            const dx = x2 - x1;
-                            const dy = y2 - y1;
-                            const distance = Math.sqrt(dx * dx + dy * dy);
-                            
-                            // Add a curve to the path
-                            const curvature = 0.3;
-                            const cx = mx + curvature * distance * Math.sin(Math.PI / 2);
-                            const cy = my + curvature * distance * Math.sin(Math.PI / 2);
-                            
-                            // Calculate position along the curved path
-                            const point = getBezierPoint(t, x1, y1, cx, cy, x2, y2);
-                            
-                            return `translate(${point.x}, ${point.y})`;
-                        } else {
-                            // Linear motion for other connection types
-                            const x = currentSource.x + (currentTarget.x - currentSource.x) * t;
-                            const y = currentSource.y + (currentTarget.y - currentSource.y) * t;
-                            return `translate(${x}, ${y})`;
-                        }
-                    };
-                })
-                .on('end', () => {
-                    if (trafficSimulationEnabled) {
-                        animate(); // Restart the animation if still enabled
-                    } else {
-                        particle.remove(); // Remove particle if simulation is stopped
-                    }
-                });
-        }
-        
-        // Start the animation with a delay based on start position
-        setTimeout(() => {
-            if (trafficSimulationEnabled) {
-                animate();
-            }
-        }, startPosition * duration);
-    }
-    
-    // Calculate point on bezier curve (for VPN tunnel animation)
-    function getBezierPoint(t, x1, y1, x2, y2, x3, y3) {
-        const t1 = 1 - t;
-        return {
-            x: t1 * t1 * x1 + 2 * t1 * t * x2 + t * t * x3,
-            y: t1 * t1 * y1 + 2 * t1 * t * y2 + t * t * y3
-        };
-    }
-    
     function updateVisualization() {
         const container = svg.select('g');
+        
+        // Store currently selected node IDs to preserve selection state
+        const selectedNodeIds = selectedNodes.map(node => node.id);
         
         // Update links
         const link = container.selectAll('.link')
@@ -1277,11 +1269,7 @@ document.addEventListener('DOMContentLoaded', function() {
             .attr('id', d => `link-${d.id}`);
             
         // Merge and update all regular links
-        const regularLinkUpdate = regularLinkEnter.merge(regularLink)
-            .attr('x1', d => getNodeById(d.source.id || d.source).x)
-            .attr('y1', d => getNodeById(d.source.id || d.source).y)
-            .attr('x2', d => getNodeById(d.target.id || d.target).x)
-            .attr('y2', d => getNodeById(d.target.id || d.target).y);
+        const regularLinkUpdate = regularLinkEnter.merge(regularLink);
         
         // Now handle VPN links separately with curved paths
         const vpnLinks = networkRelationships.filter(d => d.type === 'vpn');
@@ -1298,12 +1286,7 @@ document.addEventListener('DOMContentLoaded', function() {
             .attr('id', d => `link-${d.id}`);
             
         // Merge and update all VPN links
-        const vpnLinkUpdate = vpnLinkEnter.merge(vpnLink)
-            .attr('d', d => {
-                const source = getNodeById(d.source.id || d.source);
-                const target = getNodeById(d.target.id || d.target);
-                return renderVPNPath(source, target);
-            });
+        const vpnLinkUpdate = vpnLinkEnter.merge(vpnLink);
         
         // Update device groups
         const group = container.selectAll('.device-group-container')
@@ -1320,7 +1303,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Add the group circle
         groupEnter.append('circle')
-            .attr('class', 'device-group')
+            .attr('class', d => `device-group ${d.expanded ? 'expanded-group' : ''}`)
             .attr('r', d => calculateGroupRadius(d))
             .on('dblclick', toggleGroupExpansion);
             
@@ -1329,21 +1312,30 @@ document.addEventListener('DOMContentLoaded', function() {
             .attr('class', 'device-group-label')
             .attr('dy', -10)
             .text(d => d.name);
+        
+        // Add node count for collapsed groups
+        groupEnter.append('text')
+            .attr('class', 'group-node-count')
+            .attr('dy', 5)
+            .text(d => d.expanded ? '' : `${d.nodeIds ? d.nodeIds.length : 0}`);
             
         // Merge and update all groups
         const groupUpdate = groupEnter.merge(group);
         
-        groupUpdate.select('circle')
-            .attr('cx', d => d.x)
-            .attr('cy', d => d.y)
-            .attr('r', d => calculateGroupRadius(d))
-            .classed('expanded-group', d => d.expanded);
+        // Make sure collapsed nodes are moved to their group's center
+        networkObjects.forEach(node => {
+            const containingGroup = deviceGroups.find(g => 
+                g.nodeIds && g.nodeIds.includes(node.id)
+            );
             
-        groupUpdate.select('text')
-            .attr('x', d => d.x)
-            .attr('y', d => d.y - calculateGroupRadius(d));
+            if (containingGroup && !containingGroup.expanded) {
+                // Move to group center
+                node.x = containingGroup.x;
+                node.y = containingGroup.y;
+            }
+        });
         
-        // Update nodes
+        // Update all nodes
         const node = container.selectAll('.network-node')
             .data(networkObjects, d => d.id);
             
@@ -1353,7 +1345,19 @@ document.addEventListener('DOMContentLoaded', function() {
         // Create new nodes
         const nodeEnter = node.enter()
             .append('g')
-            .attr('class', 'network-node')
+            .attr('class', d => {
+                // Apply selected class if node was selected
+                // Also add in-group class if it's in a group
+                let classStr = 'network-node';
+                if (selectedNodeIds.includes(d.id)) classStr += ' selected';
+                
+                const groupContainingNode = deviceGroups.find(g => 
+                    g.nodeIds && g.nodeIds.includes(d.id)
+                );
+                if (groupContainingNode) classStr += ' in-group';
+                
+                return classStr;
+            })
             .attr('id', d => `node-${d.id}`)
             .call(d3.drag()
                 .on('start', dragstarted)
@@ -1391,37 +1395,139 @@ document.addEventListener('DOMContentLoaded', function() {
             .text(d => getNetworkDetails(d.metadata));
         
         // Merge and update all nodes
-        const nodeUpdate = nodeEnter.merge(node)
-            .attr('transform', d => {
-                // Check if node is part of a collapsed group
-                const groupContainingNode = deviceGroups.find(g => 
-                    g.nodeIds.includes(d.id) && !g.expanded
-                );
-                
-                if (groupContainingNode) {
-                    // If node is in a collapsed group, position at the group's center
-                    return `translate(${groupContainingNode.x}, ${groupContainingNode.y})`;
-                } else {
-                    // Otherwise, use the node's own position
-                    return `translate(${d.x}, ${d.y})`;
-                }
-            });
+        const nodeUpdate = nodeEnter.merge(node);
         
-        // Update node visibility based on group expansion state
-        nodeUpdate.style('opacity', d => {
-            const groupContainingNode = deviceGroups.find(g => 
-                g.nodeIds.includes(d.id) && !g.expanded
-            );
-            
-            return groupContainingNode ? 0 : 1;
-        });
+        // Ensure selection state is preserved during updates
+        nodeUpdate.classed('selected', d => selectedNodeIds.includes(d.id));
         
         // Update simulation nodes only when needed
         if (simulation) {
             simulation.nodes(networkObjects);
             simulation.force('link').links(networkRelationships);
+            
+            // Set up the tick function to update elements during simulation
+            simulation.on('tick', () => {
+                // Update regular links - respect fixed positions
+                regularLinkUpdate
+                    .attr('x1', d => {
+                        const sourceNode = getNodeById(d.source.id || d.source);
+                        return sourceNode.fx || sourceNode.x;
+                    })
+                    .attr('y1', d => {
+                        const sourceNode = getNodeById(d.source.id || d.source);
+                        return sourceNode.fy || sourceNode.y;
+                    })
+                    .attr('x2', d => {
+                        const targetNode = getNodeById(d.target.id || d.target);
+                        return targetNode.fx || targetNode.x;
+                    })
+                    .attr('y2', d => {
+                        const targetNode = getNodeById(d.target.id || d.target);
+                        return targetNode.fy || targetNode.y;
+                    });
+                
+                // Update VPN links with fixed positions
+                vpnLinkUpdate
+                    .attr('d', d => {
+                        const source = getNodeById(d.source.id || d.source);
+                        const target = getNodeById(d.target.id || d.target);
+                        
+                        // Use fixed positions if available
+                        const sourcePos = {
+                            x: source.fx || source.x,
+                            y: source.fy || source.y
+                        };
+                        
+                        const targetPos = {
+                            x: target.fx || target.x,
+                            y: target.fy || target.y
+                        };
+                        
+                        return renderVPNPath(sourcePos, targetPos);
+                    });
+                
+                // Update group positions
+                groupUpdate.select('circle')
+                    .attr('cx', d => d.x)
+                    .attr('cy', d => d.y)
+                    .attr('r', d => calculateGroupRadius(d))
+                    .classed('expanded-group', d => d.expanded);
+                    
+                groupUpdate.select('text')
+                    .attr('x', d => d.x)
+                    .attr('y', d => d.y - calculateGroupRadius(d));
+                
+                // Update node positions
+                nodeUpdate
+                    .attr('transform', d => {
+                        // Check if node is part of a collapsed group
+                        const groupContainingNode = deviceGroups.find(g => 
+                            g.nodeIds && g.nodeIds.includes(d.id) && !g.expanded
+                        );
+                        
+                        if (groupContainingNode) {
+                            // If node is in a collapsed group, position at the group's center
+                            return `translate(${groupContainingNode.x}, ${groupContainingNode.y})`;
+                        } else {
+                            // Apply containment force for expanded groups
+                            const expandedGroup = deviceGroups.find(g => 
+                                g.nodeIds && g.nodeIds.includes(d.id) && g.expanded
+                            );
+                            
+                            if (expandedGroup) {
+                                // Calculate distance from node to group center
+                                const dx = d.x - expandedGroup.x;
+                                const dy = d.y - expandedGroup.y;
+                                const distance = Math.sqrt(dx * dx + dy * dy);
+                                
+                                // Get the group radius
+                                const radius = calculateGroupRadius(expandedGroup);
+                                
+                                // If node is outside group boundary, pull it back in
+                                if (distance > radius - 25) {
+                                    const ratio = (radius - 25) / distance;
+                                    d.x = expandedGroup.x + dx * ratio;
+                                    d.y = expandedGroup.y + dy * ratio;
+                                }
+                            }
+                            
+                            // Return the node's position, respecting fixed position if available
+                            return `translate(${d.fx || d.x}, ${d.fy || d.y})`;
+                        }
+                    });
+                
+                // Update node visibility based on group expansion state
+                nodeUpdate.style('opacity', d => {
+                    const groupContainingNode = deviceGroups.find(g => 
+                        g.nodeIds && g.nodeIds.includes(d.id) && !g.expanded
+                    );
+                    
+                    // Hide nodes in collapsed groups, show all other nodes
+                    return groupContainingNode ? 0 : 1;
+                })
+                .style('pointer-events', d => {
+                    const groupContainingNode = deviceGroups.find(g => 
+                        g.nodeIds && g.nodeIds.includes(d.id) && !g.expanded
+                    );
+                    
+                    // Disable pointer events for hidden nodes
+                    return groupContainingNode ? 'none' : 'all';
+                });
+                
+                // Update class for group nodes to facilitate styling
+                nodeUpdate.classed('in-group', d => {
+                    return deviceGroups.some(g => 
+                        g.nodeIds && g.nodeIds.includes(d.id)
+                    );
+                });
+            });
+            
             simulation.alpha(0.3).restart();
         }
+        
+        // Restore selected nodes after visualization update
+        selectedNodes = networkObjects.filter(node => selectedNodeIds.includes(node.id));
+        updateSelectionUI();
     }
     
     // Calculate the radius for a group based on its members
@@ -1438,25 +1544,43 @@ document.addEventListener('DOMContentLoaded', function() {
         // Toggle the expanded state
         group.expanded = !group.expanded;
         
+        console.log(`Group "${group.name}" toggled to ${group.expanded ? "expanded" : "collapsed"} state`);
+        
         // Update the visualization
         updateVisualization();
         
-        // Restart the simulation
-        simulation.alpha(0.3).restart();
+        // Restart the simulation with more energy for better distribution when expanding
+        simulation.alpha(group.expanded ? 0.5 : 0.3).restart();
         
         // Stop event propagation
         event.stopPropagation();
     }
     
+    // Sets the initial state of groups to expanded
+    function initializeGroups() {
+        deviceGroups.forEach(group => {
+            // Default to expanded for better visibility
+            if (group.expanded === undefined) {
+                group.expanded = true;
+            }
+        });
+    }
+    
     // Render a VPN tunnel path between two points
     function renderVPNPath(source, target) {
+        // Get coordinates (support both node objects and position objects)
+        const sx = source.fx !== undefined ? (source.fx || source.x) : source.x;
+        const sy = source.fy !== undefined ? (source.fy || source.y) : source.y;
+        const tx = target.fx !== undefined ? (target.fx || target.x) : target.x;
+        const ty = target.fy !== undefined ? (target.fy || target.y) : target.y;
+        
         // Calculate the midpoint
-        const mx = (source.x + target.x) / 2;
-        const my = (source.y + target.y) / 2;
+        const mx = (sx + tx) / 2;
+        const my = (sy + ty) / 2;
         
         // Calculate the distance
-        const dx = target.x - source.x;
-        const dy = target.y - source.y;
+        const dx = tx - sx;
+        const dy = ty - sy;
         const distance = Math.sqrt(dx * dx + dy * dy);
         
         // Add a curve to the path
@@ -1465,6 +1589,6 @@ document.addEventListener('DOMContentLoaded', function() {
         const cy = my - curvature * distance * Math.sin(Math.PI / 2);
         
         // Return the SVG path
-        return `M${source.x},${source.y} Q${cx},${cy} ${target.x},${target.y}`;
+        return `M${sx},${sy} Q${cx},${cy} ${tx},${ty}`;
     }
 });

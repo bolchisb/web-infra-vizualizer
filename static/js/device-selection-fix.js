@@ -41,11 +41,17 @@ document.addEventListener('DOMContentLoaded', function() {
         deviceItems.forEach(i => i.classList.remove('selected'));
         element.classList.add('selected');
         
-        // Notify the main application code via custom event
-        const event = new CustomEvent('deviceSelected', { 
-            detail: { type: deviceType } 
-        });
-        document.dispatchEvent(event);
+        // Check if the main app's function exists
+        if (window.selectDeviceType && typeof window.selectDeviceType === 'function') {
+            // Call directly with no notification suppression to show exactly one notification
+            window.selectDeviceType(element, false);
+        } else {
+            // Fallback to event if main function isn't available yet
+            const event = new CustomEvent('deviceSelected', { 
+                detail: { type: deviceType } 
+            });
+            document.dispatchEvent(event);
+        }
     }
     
     // Listen for device selection events from the main application
@@ -54,7 +60,8 @@ document.addEventListener('DOMContentLoaded', function() {
             const deviceType = e.detail.type;
             const element = document.querySelector(`.device-type-list li[data-type="${deviceType}"]`);
             if (element) {
-                window.selectDeviceType(element);
+                // Pass true to suppress duplicate notification since the originating function already showed one
+                window.selectDeviceType(element, true);
             }
         }
     });

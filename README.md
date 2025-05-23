@@ -17,7 +17,6 @@ A powerful web application for visualizing and managing network infrastructure w
 - **IP Management**: Assign and track IP addresses and netmasks for all network objects
 - **Type-based Grouping**: Automatically arrange similar devices together for cleaner visualization
 - **Custom Device Grouping**: Group devices together (e.g., racks, clusters) with visual containment and naming
-- **Traffic Simulation**: Visualize network traffic with animated connections between devices
 - **SVG Icon Integration**: Professional device icons with proper scaling and visual representation
 - **Dockerized Deployment**: Easy setup with Docker and Docker Compose
 - **Production-Ready**: Configured with Gunicorn WSGI server for production use
@@ -205,17 +204,13 @@ For production deployment, it's strongly recommended to:
    - Devices automatically seek their optimal positions
    - Save and load custom layouts
 
-3. **Visual Customization & Simulation**:
+3. **Visual Customization**:
    - SVG icons represent different device types
    - Hover over connections to see relationship details
    - Click connections to edit their properties
    - Different line styles represent different connection types:
      - Solid lines for Ethernet connections
      - Dashed lines for Wireless connections
-     - Dotted lines for Fiber connections
-     - Colored tunnel effect for VPN connections
-   - Toggle traffic simulation to visualize data flow with animated particles
-   - Adjust simulation speed and traffic density
 
 ## 🔌 API Reference
 
