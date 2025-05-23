@@ -55,12 +55,34 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Preload all icons for use
         preloadIcons(['router', 'switch', 'ap', 'server', 'client', 'nas', 'internet']);
+        
+        // Initialize the inspector panel
+        initializeInspector();
     }
     
-    // Preload SVG icons for better performance
+    // Initialize the inspector panel with an empty state message
+    function initializeInspector() {
+        // Make sure the inspector content element exists
+        const inspectorContent = document.getElementById('inspector-content');
+        if (inspectorContent) {
+            inspectorContent.innerHTML = '<p class="empty-state">Select a network object to view details</p>';
+        } else {
+            console.error('Inspector content element not found');
+        }
+    }
+    
+    // Preload SVG icons for devices to ensure they're cached
     function preloadIcons(iconTypes) {
         const iconPromises = iconTypes.map(type => {
-            return fetch(`/static/img/${type === 'ap' ? 'access-point' : type}.svg`)
+            // Map client to computer.svg for proper file loading
+            let iconFileName = type;
+            if (type === 'ap') {
+                iconFileName = 'access-point';
+            } else if (type === 'client') {
+                iconFileName = 'computer';
+            }
+            
+            return fetch(`/static/img/${iconFileName}.svg`)
                 .then(response => response.text())
                 .then(svgText => {
                     // Store SVG data in memory for quick access
@@ -213,8 +235,16 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                 });
                 
-                // Update the visualization
-                updateVisualization();
+                // Completely clear and redraw the network visualization
+                const container = svg.select('g');
+                container.selectAll('*').remove();
+                
+                // Update the visualization - use updateNetworkGraph instead of updateVisualization
+                // to ensure everything is properly redrawn from scratch
+                updateNetworkGraph();
+                
+                // Enforce a higher alpha value to ensure proper initial layout
+                simulation.alpha(0.8).restart();
             })
             .catch(error => {
                 console.error('Error loading network data:', error);
@@ -225,33 +255,86 @@ document.addEventListener('DOMContentLoaded', function() {
     function updateNetworkGraph() {
         const container = svg.select('g');
         
-        // Clear previous elements
+        // Clear previous elements completely
         container.selectAll('*').remove();
         
-        // Add links (relationships)
+        // Create elements in the proper order to ensure correct z-index
+        // First add links (relationships) so they appear behind nodes
         const links = container.selectAll('.link')
             .data(networkRelationships)
             .enter()
             .append('line')
-            .attr('class', 'link');
+            .attr('class', d => `link ${d.type || 'ethernet'}`)
+            .attr('id', d => `link-${d.id}`);
+        
+        // Then add VPN links with curved paths
+        const vpnLinks = networkRelationships.filter(d => d.type === 'vpn');
+        
+        container.selectAll('.vpn-link')
+            .data(vpnLinks)
+            .enter()
+            .append('path')
+            .attr('class', 'link vpn')
+            .attr('id', d => `vpn-link-${d.id}`)
+            .attr('d', d => {
+                const source = getNodeById(d.source_id);
+                const target = getNodeById(d.target_id);
+                return renderVPNPath(source, target);
+            });
+        
+        // Add groups
+        const groups = container.selectAll('.device-group')
+            .data(deviceGroups)
+            .enter()
+            .append('g')
+            .attr('class', 'device-group-container')
+            .attr('id', d => `group-${d.id}`);
+        
+        // Add group circles
+        groups.append('circle')
+            .attr('class', d => `device-group ${d.expanded ? 'expanded-group' : ''}`)
+            .attr('r', d => calculateGroupRadius(d))
+            .attr('cx', d => d.x)
+            .attr('cy', d => d.y)
+            .on('dblclick', toggleGroupExpansion);
+        
+        // Add group labels
+        groups.append('text')
+            .attr('class', 'device-group-label')
+            .attr('x', d => d.x)
+            .attr('y', d => d.y - calculateGroupRadius(d))
+            .attr('text-anchor', 'middle')
+            .text(d => d.name);
+        
+        // Add node count for collapsed groups
+        groups.append('text')
+            .attr('class', 'group-node-count')
+            .attr('x', d => d.x)
+            .attr('y', d => d.y)
+            .attr('text-anchor', 'middle')
+            .attr('dominant-baseline', 'middle')
+            .text(d => d.expanded ? '' : `${d.nodeIds ? d.nodeIds.length : 0}`);
         
         // Add nodes (network objects)
         const nodes = container.selectAll('.node')
             .data(networkObjects)
             .enter()
             .append('g')
-            .attr('class', 'node')
+            .attr('class', 'network-node')
+            .attr('id', d => `node-${d.id}`)
             .call(d3.drag()
                 .on('start', dragstarted)
                 .on('drag', dragged)
-                .on('end', dragended));
+                .on('end', dragended))
+            .on('click', handleNodeClick);
         
         // Add circles to nodes with icons based on type
         nodes.append('circle')
-            .attr('r', 20)
-            .attr('fill', d => getNodeColor(d.type))
-            .attr('stroke', '#fff')
-            .attr('stroke-width', 1);
+            .attr('class', 'node-border')
+            .attr('r', 25)
+            .attr('fill', 'white')
+            .attr('stroke', d => getNodeColor(d.type))
+            .attr('stroke-width', 2);
             
         // Add SVG icons for nodes
         nodes.append('image')
@@ -265,43 +348,119 @@ document.addEventListener('DOMContentLoaded', function() {
         // Add text labels
         nodes.append('text')
             .attr('class', 'node-label')
-            .attr('dy', 32)
+            .attr('dy', 38)
             .attr('text-anchor', 'middle')
             .text(d => d.name);
-            
+        
         // Add IP address/netmask labels
         nodes.append('text')
             .attr('class', 'ip-label')
-            .attr('dy', 48)
+            .attr('dy', 54)
             .attr('text-anchor', 'middle')
             .text(d => getNetworkDetails(d.metadata));
+        
+        // Update node positions
+        nodes.attr('transform', d => {
+            const containingGroup = deviceGroups.find(g => 
+                g.nodeIds && g.nodeIds.includes(d.id) && !g.expanded
+            );
             
-        // Update the grouping force with new data
-        simulation.force('grouping', groupingForce());
+            if (containingGroup) {
+                // Position at group center if in collapsed group
+                return `translate(${containingGroup.x}, ${containingGroup.y})`;
+            } else {
+                return `translate(${d.x}, ${d.y})`;
+            }
+        });
+        
+        // Update regular links
+        links
+            .attr('x1', d => {
+                const source = getNodeById(d.source_id);
+                return source.x;
+            })
+            .attr('y1', d => {
+                const source = getNodeById(d.source_id);
+                return source.y;
+            })
+            .attr('x2', d => {
+                const target = getNodeById(d.target_id);
+                return target.x;
+            })
+            .attr('y2', d => {
+                const target = getNodeById(d.target_id);
+                return target.y;
+            });
         
         // Set up simulation
         simulation
             .nodes(networkObjects)
             .on('tick', () => {
-                // Update positions - safely access source and target
+                // Update positions during simulation
                 links
-                    .attr('x1', d => (d.source && d.source.x) ? d.source.x : (d.source_id && getNodeById(d.source_id).x))
-                    .attr('y1', d => (d.source && d.source.y) ? d.source.y : (d.source_id && getNodeById(d.source_id).y))
-                    .attr('x2', d => (d.target && d.target.x) ? d.target.x : (d.target_id && getNodeById(d.target_id).x))
-                    .attr('y2', d => (d.target && d.target.y) ? d.target.y : (d.target_id && getNodeById(d.target_id).y));
+                    .attr('x1', d => {
+                        const source = getNodeById(d.source_id);
+                        return source.x;
+                    })
+                    .attr('y1', d => {
+                        const source = getNodeById(d.source_id);
+                        return source.y;
+                    })
+                    .attr('x2', d => {
+                        const target = getNodeById(d.target_id);
+                        return target.x;
+                    })
+                    .attr('y2', d => {
+                        const target = getNodeById(d.target_id);
+                        return target.y;
+                    });
                 
+                // Update VPN paths
+                container.selectAll('.vpn')
+                    .attr('d', d => {
+                        const source = getNodeById(d.source_id);
+                        const target = getNodeById(d.target_id);
+                        return renderVPNPath(source, target);
+                    });
+                
+                // Update groups
+                container.selectAll('.device-group-container')
+                    .each(function(d) {
+                        const group = d3.select(this);
+                        group.select('circle')
+                            .attr('cx', d.x)
+                            .attr('cy', d.y);
+                        
+                        group.select('.device-group-label')
+                            .attr('x', d.x)
+                            .attr('y', d.y - calculateGroupRadius(d));
+                        
+                        group.select('.group-node-count')
+                            .attr('x', d.x)
+                            .attr('y', d.y);
+                    });
+                
+                // Update node positions
                 nodes
-                    .attr('transform', d => `translate(${d.x}, ${d.y})`);
+                    .attr('transform', d => {
+                        const containingGroup = deviceGroups.find(g => 
+                            g.nodeIds && g.nodeIds.includes(d.id) && !g.expanded
+                        );
+                        
+                        if (containingGroup) {
+                            // Position at group center if in collapsed group
+                            return `translate(${containingGroup.x}, ${containingGroup.y})`;
+                        } else {
+                            return `translate(${d.x}, ${d.y})`;
+                        }
+                    });
             });
-            
+        
         simulation.force('link')
             .links(networkRelationships);
-            
-        // Restart simulation with higher alpha for better grouping
-        simulation.alpha(0.8).restart();
         
-        // Node click handler
-        nodes.on('click', handleNodeClick);
+        // Restart simulation with higher alpha for better initialization
+        simulation.alpha(0.8).restart();
     }
 
     function getNodeById(id) {
@@ -368,32 +527,50 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function showObjectDetails(object) {
-        inspectorContent.innerHTML = `
-            <h4>${object.name}</h4>
-            <p><strong>ID:</strong> ${object.id}</p>
-            <p><strong>Type:</strong> ${object.type}</p>
-            <div class="network-details">
-                <h5>Network Details</h5>
-                <form id="network-details-form" data-id="${object.id}">
-                    <div class="form-group">
-                        <label for="ip-address">IP Address:</label>
-                        <input type="text" id="ip-address" value="${object.metadata?.ip || ''}" placeholder="e.g., 192.168.1.1">
-                    </div>
-                    <div class="form-group">
-                        <label for="netmask">Netmask:</label>
-                        <input type="text" id="netmask" value="${object.metadata?.netmask || ''}" placeholder="e.g., 24 or 255.255.255.0">
-                    </div>
-                    <button type="submit" class="btn btn-primary">Update</button>
-                </form>
-            </div>
-            <div class="metadata">
-                <h5>Other Metadata</h5>
-                <pre>${JSON.stringify(object.metadata || {}, null, 2)}</pre>
-            </div>
-            <div class="actions">
-                <button class="btn btn-delete" data-id="${object.id}">Delete</button>
+        // Reference the inspector content element
+        const inspectorContent = document.getElementById('inspector-content');
+        if (!inspectorContent) {
+            console.error('Inspector content element not found');
+            return;
+        }
+        
+        console.log('Showing details for object:', object);
+        
+        // Create the HTML content for the inspector
+        const htmlContent = `
+            <div class="object-details">
+                <h4>${object.name}</h4>
+                <p><strong>ID:</strong> ${object.id}</p>
+                <p><strong>Type:</strong> ${object.type}</p>
+                
+                <div class="network-details">
+                    <h5>Network Details</h5>
+                    <form id="network-details-form" data-id="${object.id}">
+                        <div class="form-group">
+                            <label for="ip-address">IP Address:</label>
+                            <input type="text" id="ip-address" value="${object.metadata?.ip || ''}" placeholder="e.g., 192.168.1.1">
+                        </div>
+                        <div class="form-group">
+                            <label for="netmask">Netmask:</label>
+                            <input type="text" id="netmask" value="${object.metadata?.netmask || ''}" placeholder="e.g., 24 or 255.255.255.0">
+                        </div>
+                        <button type="submit" class="btn btn-primary">Update</button>
+                    </form>
+                </div>
+                
+                <div class="metadata">
+                    <h5>Other Metadata</h5>
+                    <pre>${JSON.stringify(object.metadata || {}, null, 2)}</pre>
+                </div>
+                
+                <div class="actions">
+                    <button class="btn btn-delete" data-id="${object.id}">Delete</button>
+                </div>
             </div>
         `;
+        
+        // Set the HTML content
+        inspectorContent.innerHTML = htmlContent;
         
         // Add event listener for delete button
         const deleteBtn = inspectorContent.querySelector('.btn-delete');
@@ -402,18 +579,39 @@ document.addEventListener('DOMContentLoaded', function() {
                 const objectId = event.target.getAttribute('data-id');
                 deleteNetworkObject(objectId);
             });
+        } else {
+            console.error('Delete button not found in inspector');
         }
         
         // Add event listener for network details form
         const networkForm = inspectorContent.querySelector('#network-details-form');
         if (networkForm) {
-            networkForm.addEventListener('submit', (event) => {
+            // Use addEventListener instead of onsubmit for better reliability
+            networkForm.addEventListener('submit', function(event) {
                 event.preventDefault();
-                const objectId = networkForm.getAttribute('data-id');
-                const ipAddress = document.getElementById('ip-address').value;
-                const netmask = document.getElementById('netmask').value;
+                
+                // Get the form values
+                const objectId = this.getAttribute('data-id');
+                const ipAddressInput = this.querySelector('#ip-address');
+                const netmaskInput = this.querySelector('#netmask');
+                
+                if (!ipAddressInput || !netmaskInput) {
+                    console.error('Form inputs not found');
+                    return;
+                }
+                
+                const ipAddress = ipAddressInput.value;
+                const netmask = netmaskInput.value;
+                
+                console.log(`Updating network details: ID=${objectId}, IP=${ipAddress}, Netmask=${netmask}`);
+                
+                // Update the network details
                 updateNetworkDetails(objectId, ipAddress, netmask);
             });
+            
+            console.log('Network details form event listener attached');
+        } else {
+            console.error('Network details form not found in inspector');
         }
     }
 
@@ -875,10 +1073,17 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         
+        console.log(`Updating object ${objectId} with IP=${ipAddress}, Netmask=${netmask}`);
+        
+        // Ensure object has a metadata object
+        if (!object.metadata) {
+            object.metadata = {};
+        }
+        
         // Create update data with new network details
         const updateData = {
             metadata: {
-                ...(object.metadata || {}),
+                ...object.metadata,
                 ip: ipAddress || null,
                 netmask: netmask || null
             }
@@ -892,20 +1097,32 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             body: JSON.stringify(updateData),
         })
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Server responded with status: ${response.status}`);
+            }
+            return response.json();
+        })
         .then(data => {
-            // Update local object data
-            object.metadata = data.metadata;
+            console.log('Network details updated successfully:', data);
             
-            // Update visualization
+            // Update local object data
+            object.metadata = data.metadata || {};
+            
+            // Update visualization with complete refresh
+            const container = svg.select('g');
+            container.selectAll('*').remove();
             updateNetworkGraph();
             
             // Show toast notification
             showToast(`Updated network details for ${object.name}`);
+            
+            // Update the inspector to show the new values
+            showObjectDetails(object);
         })
         .catch(error => {
             console.error('Error updating network details:', error);
-            showToast('Failed to update network details', 'error');
+            showToast('Failed to update network details: ' + error.message, 'error');
         });
     }
     
@@ -923,6 +1140,9 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Handle clicking on a node
     function handleNodeClick(event, d) {
+        // Log debug information
+        console.log('Node clicked - ID:', d.id, 'Name:', d.name, 'Type:', d.type);
+        
         // Prevent event propagation to avoid deselection
         event.stopPropagation();
         
@@ -947,6 +1167,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         // Show object details in the inspector
+        console.log('Calling showObjectDetails with node:', d);
         showObjectDetails(d);
         
         // Debug selection state
@@ -1305,11 +1526,14 @@ document.addEventListener('DOMContentLoaded', function() {
         groupEnter.append('circle')
             .attr('class', d => `device-group ${d.expanded ? 'expanded-group' : ''}`)
             .attr('r', d => calculateGroupRadius(d))
+            .attr('cx', d => d.x)
+            .attr('cy', d => d.y)
             .on('dblclick', toggleGroupExpansion);
             
         // Add the group label
         groupEnter.append('text')
             .attr('class', 'device-group-label')
+            .attr('x', d => d.x)
             .attr('dy', -10)
             .text(d => d.name);
         
@@ -1574,21 +1798,32 @@ document.addEventListener('DOMContentLoaded', function() {
         const tx = target.fx !== undefined ? (target.fx || target.x) : target.x;
         const ty = target.fy !== undefined ? (target.fy || target.y) : target.y;
         
-        // Calculate the midpoint
-        const mx = (sx + tx) / 2;
-        const my = (sy + ty) / 2;
-        
         // Calculate the distance
         const dx = tx - sx;
         const dy = ty - sy;
         const distance = Math.sqrt(dx * dx + dy * dy);
         
-        // Add a curve to the path
-        const curvature = 0.3;
-        const cx = mx - curvature * distance * Math.sin(Math.PI / 2);
-        const cy = my - curvature * distance * Math.sin(Math.PI / 2);
+        // For straight-line VPN connections
+        if (distance < 150) {
+            // Use a simple straight line for short distances
+            return `M${sx},${sy} L${tx},${ty}`;
+        }
         
-        // Return the SVG path
-        return `M${sx},${sy} Q${cx},${cy} ${tx},${ty}`;
+        // For curved connections
+        // Determine curve direction - perpendicular to the line
+        const angle = Math.atan2(dy, dx);
+        const perpAngle = angle + Math.PI/2;
+        
+        // Calculate control point - perpendicular to the midpoint
+        const midX = (sx + tx) / 2;
+        const midY = (sy + ty) / 2;
+        const curvature = distance * 0.2; // Adjust curve magnitude based on distance
+        
+        // Create control point
+        const ctrlX = midX + curvature * Math.cos(perpAngle);
+        const ctrlY = midY + curvature * Math.sin(perpAngle);
+        
+        // Return a simple quadratic curve path
+        return `M${sx},${sy} Q${ctrlX},${ctrlY} ${tx},${ty}`;
     }
 });

@@ -214,6 +214,7 @@ body.add-mode .node {
     font-style: italic;
     text-align: center;
     padding: 20px 0;
+    font-size: 14px;
 }
 
 .metadata {
@@ -462,11 +463,46 @@ body.add-mode .node {
     background-color: #f5f9ff;
     border-radius: 4px;
     border: 1px solid #e0e7f2;
+    display: block; /* Ensure the element is displayed as block */
 }
 
 .network-details h5 {
     margin-bottom: 10px;
     color: #2c3e50;
+    font-weight: bold;
+}
+
+.network-details form {
+    display: block;
+    margin-bottom: 10px;
+}
+
+.network-details .form-group {
+    margin-bottom: 10px;
+}
+
+.network-details input {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+.network-details button.btn-primary {
+    display: block;
+    width: 100%;
+    margin-top: 10px;
+    padding: 8px;
+    background-color: #3498db;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.network-details button.btn-primary:hover {
+    background-color: #2980b9;
 }
 
 /* Grouping Controls */
@@ -630,9 +666,10 @@ input:checked + .slider:before {
 
 .link.vpn {
     stroke: #2ecc71;
-    stroke-width: 4;
-    stroke-dasharray: 10,4;
+    stroke-width: 3px;
+    stroke-dasharray: 7,3;
     stroke-linecap: round;
+    fill: none; /* Remove fill to fix the black area */
 }
 
 /* Device Grouping */
@@ -681,4 +718,9 @@ input:checked + .slider:before {
 .control-group label {
     margin-right: 8px;
     flex-shrink: 0;
+}
+
+/* Object details container */
+.object-details {
+    padding: 10px;
 }
