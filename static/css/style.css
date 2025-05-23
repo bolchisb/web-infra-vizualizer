@@ -337,6 +337,28 @@ body.add-mode .node {
     background-color: #c0392b;
 }
 
+.btn-action {
+    background-color: #9b59b6;
+    color: white;
+    width: 100%;
+    margin-top: 10px;
+    font-size: 14px;
+    font-weight: bold;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+.btn-action:hover {
+    background-color: #8e44ad;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(155, 89, 182, 0.3);
+}
+
+.btn-action:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 6px rgba(155, 89, 182, 0.3);
+}
+
 /* Active button state */
 .btn.active {
     background-color: #e74c3c;

@@ -994,6 +994,11 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
         
+        // Untangle layout button
+        document.getElementById('untangle-layout-btn').addEventListener('click', function() {
+            untangleLayout();
+        });
+        
         // Add keyboard shortcuts
         document.addEventListener('keydown', function(event) {
             // Only process if not in a form field
@@ -1630,6 +1635,292 @@ document.addEventListener('DOMContentLoaded', function() {
             const r = Math.random() * 16 | 0;
             const v = c === 'x' ? r : (r & 0x3 | 0x8);
             return v.toString(16);
+        });
+    }
+    
+    // Untangle and reorganize the network layout
+    function untangleLayout() {
+        console.log('Untangling layout with topology awareness...');
+        showToast('Analyzing network topology and reorganizing...');
+        
+        const canvas = document.querySelector('.network-canvas');
+        const canvasWidth = canvas.clientWidth;
+        const canvasHeight = canvas.clientHeight;
+        
+        console.log('Canvas dimensions:', canvasWidth, 'x', canvasHeight);
+        console.log('Network objects:', networkObjects.length);
+        console.log('Network relationships:', networkRelationships.length);
+        
+        // Step 1: Build a topology-aware hierarchy
+        const hierarchy = buildNetworkHierarchy();
+        
+        // Step 2: Position nodes based on their role in the network topology
+        positionNodesHierarchically(hierarchy, canvasWidth, canvasHeight);
+        
+        // Step 3: Apply connection-aware fine-tuning
+        optimizeForConnections();
+        
+        // Step 4: Update device groups to match their member positions
+        deviceGroups.forEach(group => {
+            if (group.nodeIds && group.nodeIds.length > 0) {
+                const memberNodes = networkObjects.filter(node => group.nodeIds.includes(node.id));
+                if (memberNodes.length > 0) {
+                    group.x = memberNodes.reduce((sum, n) => sum + n.x, 0) / memberNodes.length;
+                    group.y = memberNodes.reduce((sum, n) => sum + n.y, 0) / memberNodes.length;
+                }
+            }
+        });
+        
+        // Step 5: Clear any fixed positions and update visualization
+        networkObjects.forEach(node => {
+            node.fx = null;
+            node.fy = null;
+        });
+        
+        // Update the visualization immediately
+        updateNetworkGraph();
+        
+        // Restart simulation with connection-aware forces
+        if (simulation) {
+            simulation
+                .alpha(1.0)
+                .alphaTarget(0.1)
+                .restart();
+            
+            setTimeout(() => {
+                simulation.alphaTarget(0);
+            }, 3000);
+        }
+        
+        console.log('Topology-aware layout reorganization complete');
+        showToast('Network untangled based on actual connections!', 3000);
+    }
+    
+    // Build a hierarchy based on network topology and connections
+    function buildNetworkHierarchy() {
+        console.log('Building network hierarchy from topology...');
+        
+        // Create adjacency map for quick lookup
+        const connections = {};
+        networkObjects.forEach(node => {
+            connections[node.id] = [];
+        });
+        
+        networkRelationships.forEach(rel => {
+            if (connections[rel.source_id]) {
+                connections[rel.source_id].push(rel.target_id);
+            }
+            if (connections[rel.target_id]) {
+                connections[rel.target_id].push(rel.source_id);
+            }
+        });
+        
+        // Categorize nodes by their network role
+        const hierarchy = {
+            internet: [],      // Internet gateways (highest level)
+            core: [],          // Core routers/switches (high connectivity)
+            distribution: [],  // Distribution switches/routers
+            access: [],        // Access points, edge switches
+            endpoints: []      // Servers, clients, NAS (low connectivity)
+        };
+        
+        networkObjects.forEach(node => {
+            const nodeConnections = connections[node.id] || [];
+            const connectionCount = nodeConnections.length;
+            
+            console.log(`Node: ${node.name} (${node.type}) - Connections: ${connectionCount}`);
+            
+            // Classify based on type and connectivity
+            if (node.type === 'internet') {
+                hierarchy.internet.push(node);
+                console.log(`  -> Classified as INTERNET`);
+            } else if (node.type === 'router' && connectionCount >= 3) {
+                hierarchy.core.push(node);
+                console.log(`  -> Classified as CORE router`);
+            } else if (node.type === 'router' && connectionCount >= 2) {
+                hierarchy.distribution.push(node);
+                console.log(`  -> Classified as DISTRIBUTION router`);
+            } else if (node.type === 'switch' && connectionCount >= 3) {
+                hierarchy.distribution.push(node);
+                console.log(`  -> Classified as DISTRIBUTION switch`);
+            } else if (node.type === 'switch' || node.type === 'ap') {
+                hierarchy.access.push(node);
+                console.log(`  -> Classified as ACCESS (${node.type})`);
+            } else {
+                hierarchy.endpoints.push(node);
+                console.log(`  -> Classified as ENDPOINT (${node.type})`);
+            }
+        });
+        
+        console.log('Final hierarchy distribution:');
+        console.log('  Internet:', hierarchy.internet.map(n => n.name));
+        console.log('  Core:', hierarchy.core.map(n => n.name));
+        console.log('  Distribution:', hierarchy.distribution.map(n => n.name));
+        console.log('  Access:', hierarchy.access.map(n => n.name));
+        console.log('  Endpoints:', hierarchy.endpoints.map(n => n.name));
+        
+        return { hierarchy, connections };
+    }
+    
+    // Position nodes hierarchically based on network topology
+    function positionNodesHierarchically(hierarchyData, width, height) {
+        const { hierarchy, connections } = hierarchyData;
+        
+        console.log('Positioning nodes hierarchically...');
+        console.log('Canvas size:', width, 'x', height);
+        
+        // Define vertical layers for the hierarchy
+        const layers = [
+            { name: 'internet', y: 0.15, nodes: hierarchy.internet },
+            { name: 'core', y: 0.35, nodes: hierarchy.core },
+            { name: 'distribution', y: 0.55, nodes: hierarchy.distribution },
+            { name: 'access', y: 0.75, nodes: hierarchy.access },
+            { name: 'endpoints', y: 0.9, nodes: hierarchy.endpoints }
+        ];
+        
+        layers.forEach(layer => {
+            if (layer.nodes.length === 0) {
+                console.log(`Layer ${layer.name}: empty`);
+                return;
+            }
+            
+            const layerY = layer.y * height;
+            console.log(`Layer ${layer.name}: ${layer.nodes.length} nodes at y=${layerY}`);
+            
+            if (layer.nodes.length === 1) {
+                // Single node: center it
+                layer.nodes[0].x = width / 2;
+                layer.nodes[0].y = layerY;
+                console.log(`  ${layer.nodes[0].name}: positioned at (${layer.nodes[0].x}, ${layer.nodes[0].y})`);
+            } else {
+                // Multiple nodes: distribute based on their connections to upper layers
+                const positioned = positionNodesInLayer(layer.nodes, connections, width, layerY, layers.slice(0, layers.indexOf(layer)));
+                positioned.forEach((pos, i) => {
+                    layer.nodes[i].x = pos.x;
+                    layer.nodes[i].y = pos.y;
+                    console.log(`  ${layer.nodes[i].name}: positioned at (${pos.x}, ${pos.y})`);
+                });
+            }
+        });
+    }
+    
+    // Position nodes within a layer based on their connections to upper layers
+    function positionNodesInLayer(nodes, connections, width, layerY, upperLayers) {
+        const positions = [];
+        
+        // Get all nodes from upper layers for reference
+        const upperNodes = [];
+        upperLayers.forEach(layer => {
+            upperNodes.push(...layer.nodes);
+        });
+        
+        if (upperNodes.length === 0) {
+            // No upper layers - distribute evenly
+            nodes.forEach((node, i) => {
+                const spacing = width / (nodes.length + 1);
+                positions.push({
+                    x: spacing * (i + 1),
+                    y: layerY
+                });
+            });
+        } else {
+            // Position based on connections to upper layers
+            nodes.forEach((node, i) => {
+                const nodeConnections = connections[node.id] || [];
+                
+                // Find connected upper layer nodes
+                const connectedUpper = upperNodes.filter(upperNode => 
+                    nodeConnections.includes(upperNode.id)
+                );
+                
+                let targetX;
+                if (connectedUpper.length > 0) {
+                    // Position based on average of connected upper nodes
+                    targetX = connectedUpper.reduce((sum, upperNode) => sum + upperNode.x, 0) / connectedUpper.length;
+                } else {
+                    // No connections to upper layers - distribute in remaining space
+                    const spacing = width / (nodes.length + 1);
+                    targetX = spacing * (i + 1);
+                }
+                
+                // Add some spreading to avoid overlap
+                const spread = (i - (nodes.length - 1) / 2) * 60;
+                targetX += spread;
+                
+                // Keep within bounds
+                targetX = Math.max(80, Math.min(width - 80, targetX));
+                
+                positions.push({
+                    x: targetX,
+                    y: layerY + (Math.random() - 0.5) * 40  // Small vertical variance
+                });
+            });
+        }
+        
+        return positions;
+    }
+    
+    // Apply fine-tuning based on connections to reduce edge crossings
+    function optimizeForConnections() {
+        const maxIterations = 10;
+        
+        for (let iteration = 0; iteration < maxIterations; iteration++) {
+            let totalMovement = 0;
+            
+            networkObjects.forEach(node => {
+                const nodeConnections = networkRelationships.filter(rel => 
+                    rel.source_id === node.id || rel.target_id === node.id
+                );
+                
+                if (nodeConnections.length === 0) return;
+                
+                // Calculate ideal position based on connected nodes
+                let idealX = 0;
+                let idealY = 0;
+                let connectedCount = 0;
+                
+                nodeConnections.forEach(rel => {
+                    const connectedNodeId = rel.source_id === node.id ? rel.target_id : rel.source_id;
+                    const connectedNode = networkObjects.find(n => n.id === connectedNodeId);
+                    
+                    if (connectedNode) {
+                        idealX += connectedNode.x;
+                        idealY += connectedNode.y;
+                        connectedCount++;
+                    }
+                });
+                
+                if (connectedCount > 0) {
+                    idealX /= connectedCount;
+                    idealY /= connectedCount;
+                    
+                    // Move towards ideal position (with dampening)
+                    const dampening = 0.3;
+                    const deltaX = (idealX - node.x) * dampening;
+                    const deltaY = (idealY - node.y) * dampening;
+                    
+                    node.x += deltaX;
+                    node.y += deltaY;
+                    
+                    totalMovement += Math.abs(deltaX) + Math.abs(deltaY);
+                }
+            });
+            
+            // Stop if movement is minimal
+            if (totalMovement < 50) {
+                console.log(`Optimization converged after ${iteration + 1} iterations`);
+                break;
+            }
+        }
+        
+        // Ensure all nodes stay within canvas bounds
+        networkObjects.forEach(node => {
+            const canvas = document.querySelector('.network-canvas');
+            const canvasWidth = canvas.clientWidth;
+            const canvasHeight = canvas.clientHeight;
+            
+            node.x = Math.max(60, Math.min(canvasWidth - 60, node.x));
+            node.y = Math.max(60, Math.min(canvasHeight - 60, node.y));
         });
     }
     

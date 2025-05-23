@@ -425,16 +425,25 @@ def delete_relationship(relationship_id):
 @app.route('/network', methods=['GET'])
 def get_network():
     with get_db_session() as session:
-        # Get all objects
+        # Get all objects with proper metadata reconstruction
         objects_result = session.run("""
             MATCH (o:NetworkObject)
-            RETURN o
+            WITH o, 
+                 [k in keys(o) WHERE k STARTS WITH 'metadata_'] AS metadata_keys,
+                 o.id as id, o.name as name, o.type as type
+            
+            WITH o, metadata_keys, id, name, type,
+                 apoc.map.fromLists(
+                    [k in metadata_keys | substring(k, 9)],
+                    [k in metadata_keys | o[k]]
+                 ) AS metadata_map
+            
+            RETURN id, name, type, metadata_map as metadata
         """)
         
         nodes = []
         for record in objects_result:
-            node = dict(record["o"].items())
-            nodes.append(node)
+            nodes.append(dict(record))
         
         # Get all relationships
         relationships_result = session.run("""
