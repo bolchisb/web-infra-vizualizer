@@ -81,17 +81,23 @@
                     <label for="expand-all-groups">Expand All Groups</label>
                 </div>
             </div>
-            
-            <div class="object-inspector">
-                <h3>Object Inspector</h3>
-                <div id="inspector-content" class="inspector-content">
-                    <p class="empty-state">Select a network object to view details</p>
-                </div>
-            </div>
         </div>
         
         <div class="network-canvas">
             <div id="network-graph"></div>
+            
+            <!-- Floating Object Inspector -->
+            <div class="floating-inspector" id="floating-inspector">
+                <div class="inspector-header">
+                    <h3>Object Inspector</h3>
+                    <button class="inspector-toggle" id="inspector-toggle">−</button>
+                </div>
+                <div class="inspector-body" id="inspector-body">
+                    <div id="inspector-content" class="inspector-content">
+                        <p class="empty-state">Select a network object to view details</p>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
     

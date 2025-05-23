@@ -69,6 +69,31 @@ document.addEventListener('DOMContentLoaded', function() {
         } else {
             console.error('Inspector content element not found');
         }
+        
+        // Initially hide the inspector
+        hideInspector();
+    }
+    
+    // Show the floating inspector with animation
+    function showInspector() {
+        const floatingInspector = document.getElementById('floating-inspector');
+        const networkCanvas = document.querySelector('.network-canvas');
+        
+        if (floatingInspector && networkCanvas) {
+            floatingInspector.classList.add('visible');
+            networkCanvas.classList.add('inspector-visible');
+        }
+    }
+    
+    // Hide the floating inspector with animation
+    function hideInspector() {
+        const floatingInspector = document.getElementById('floating-inspector');
+        const networkCanvas = document.querySelector('.network-canvas');
+        
+        if (floatingInspector && networkCanvas) {
+            floatingInspector.classList.remove('visible');
+            networkCanvas.classList.remove('inspector-visible');
+        }
     }
     
     // Preload SVG icons for devices to ensure they're cached
@@ -117,6 +142,8 @@ document.addEventListener('DOMContentLoaded', function() {
             } else {
                 // Clicking on the background deselects all nodes
                 clearNodeSelection();
+                // Hide inspector when nothing is selected
+                hideInspector();
             }
         });
         
@@ -352,12 +379,32 @@ document.addEventListener('DOMContentLoaded', function() {
             .attr('text-anchor', 'middle')
             .text(d => d.name);
         
-        // Add IP address/netmask labels
-        nodes.append('text')
-            .attr('class', 'ip-label')
-            .attr('dy', 54)
-            .attr('text-anchor', 'middle')
-            .text(d => getNetworkDetails(d.metadata));
+        // Add IP address/netmask labels with enhanced visibility
+        nodes.each(function(d) {
+            // Add a background for the IP text if there is network info
+            const networkInfo = getNetworkDetails(d.metadata);
+            if (networkInfo) {
+                const node = d3.select(this);
+                
+                // Add a small background rectangle for better visibility
+                node.append('rect')
+                    .attr('class', 'ip-label-bg')
+                    .attr('width', networkInfo.length * 6 + 10) // Approximate width based on text length
+                    .attr('height', 18)
+                    .attr('x', -(networkInfo.length * 6 + 10) / 2) // Center horizontally
+                    .attr('y', 42)  // Position just below the node name
+                    .attr('rx', 4) // Rounded corners
+                    .attr('ry', 4)
+                    .attr('fill', 'rgba(255,255,255,0.8)'); // Semi-transparent white
+                    
+                // Add the IP text on top of background
+                node.append('text')
+                    .attr('class', 'ip-label')
+                    .attr('dy', 56)  // Position just below the node name
+                    .attr('text-anchor', 'middle')
+                    .text(networkInfo);
+            }
+        });
         
         // Update node positions
         nodes.attr('transform', d => {
@@ -494,17 +541,17 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     function getNetworkDetails(metadata) {
-        if (!metadata) return null;
+        if (!metadata) return '';
         
-        const ip = metadata.ip || null;
-        const netmask = metadata.netmask || null;
+        const ip = metadata.ip || '';
+        const netmask = metadata.netmask || '';
         
         if (ip && netmask) {
             return `${ip}/${netmask}`;
         } else if (ip) {
             return ip;
         }
-        return null;
+        return '';
     }
 
     function updateNodeSelects() {
@@ -536,25 +583,37 @@ document.addEventListener('DOMContentLoaded', function() {
         
         console.log('Showing details for object:', object);
         
-        // Create the HTML content for the inspector
+        // Show the inspector with animation
+        showInspector();
+        
+        // Ensure metadata exists
+        if (!object.metadata) {
+            object.metadata = {};
+        }
+        
+        // Make sure we have access to IP and netmask values (check for undefined/null)
+        const ipValue = object.metadata.ip || '';
+        const netmaskValue = object.metadata.netmask || '';
+        
+        // Create the HTML content for the inspector with prominent network details section
         const htmlContent = `
             <div class="object-details">
                 <h4>${object.name}</h4>
                 <p><strong>ID:</strong> ${object.id}</p>
                 <p><strong>Type:</strong> ${object.type}</p>
                 
-                <div class="network-details">
-                    <h5>Network Details</h5>
+                <div class="network-details" style="background-color: #e3f2fd; padding: 15px; margin: 15px 0; border-radius: 5px; border: 2px solid #2196F3;">
+                    <h5 style="color: #0d47a1; margin-bottom: 12px; font-size: 16px;">Network Details</h5>
                     <form id="network-details-form" data-id="${object.id}">
                         <div class="form-group">
-                            <label for="ip-address">IP Address:</label>
-                            <input type="text" id="ip-address" value="${object.metadata?.ip || ''}" placeholder="e.g., 192.168.1.1">
+                            <label for="ip-address" style="font-weight: bold;">IP Address:</label>
+                            <input type="text" id="ip-address" value="${ipValue}" placeholder="e.g., 192.168.1.1" style="width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #bbb;">
                         </div>
                         <div class="form-group">
-                            <label for="netmask">Netmask:</label>
-                            <input type="text" id="netmask" value="${object.metadata?.netmask || ''}" placeholder="e.g., 24 or 255.255.255.0">
+                            <label for="netmask" style="font-weight: bold;">Netmask:</label>
+                            <input type="text" id="netmask" value="${netmaskValue}" placeholder="e.g., 24 or 255.255.255.0" style="width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #bbb;">
                         </div>
-                        <button type="submit" class="btn btn-primary">Update</button>
+                        <button type="submit" class="btn btn-primary" style="width: 100%; padding: 10px; background-color: #2196F3; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Update Network Details</button>
                     </form>
                 </div>
                 
@@ -572,6 +631,9 @@ document.addEventListener('DOMContentLoaded', function() {
         // Set the HTML content
         inspectorContent.innerHTML = htmlContent;
         
+        // Force layout recalculation to ensure rendering
+        void inspectorContent.offsetHeight;
+        
         // Add event listener for delete button
         const deleteBtn = inspectorContent.querySelector('.btn-delete');
         if (deleteBtn) {
@@ -586,6 +648,8 @@ document.addEventListener('DOMContentLoaded', function() {
         // Add event listener for network details form
         const networkForm = inspectorContent.querySelector('#network-details-form');
         if (networkForm) {
+            console.log('Network form found, attaching event listener');
+            
             // Use addEventListener instead of onsubmit for better reliability
             networkForm.addEventListener('submit', function(event) {
                 event.preventDefault();
@@ -631,6 +695,89 @@ document.addEventListener('DOMContentLoaded', function() {
                 document.getElementById('create-group-modal').style.display = 'none';
             });
         });
+        
+        // Floating Inspector Toggle
+        const inspectorToggle = document.getElementById('inspector-toggle');
+        const floatingInspector = document.getElementById('floating-inspector');
+        const inspectorBody = document.getElementById('inspector-body');
+        
+        if (inspectorToggle && floatingInspector) {
+            inspectorToggle.addEventListener('click', function() {
+                const isCollapsed = floatingInspector.classList.contains('collapsed');
+                
+                if (isCollapsed) {
+                    // Expand
+                    floatingInspector.classList.remove('collapsed');
+                    this.textContent = '−';
+                } else {
+                    // Collapse
+                    floatingInspector.classList.add('collapsed');
+                    this.textContent = '+';
+                }
+            });
+        }
+        
+        // Make the floating inspector draggable
+        let isDragging = false;
+        let currentX;
+        let currentY;
+        let initialX;
+        let initialY;
+        let xOffset = 0;
+        let yOffset = 0;
+        
+        const inspectorHeader = document.querySelector('.inspector-header');
+        
+        if (inspectorHeader && floatingInspector) {
+            inspectorHeader.addEventListener('mousedown', dragStart);
+            document.addEventListener('mousemove', drag);
+            document.addEventListener('mouseup', dragEnd);
+            
+            function dragStart(e) {
+                if (e.target.classList.contains('inspector-toggle')) {
+                    return; // Don't drag when clicking the toggle button
+                }
+                
+                initialX = e.clientX - xOffset;
+                initialY = e.clientY - yOffset;
+                
+                if (e.target === inspectorHeader || inspectorHeader.contains(e.target)) {
+                    isDragging = true;
+                    floatingInspector.style.cursor = 'grabbing';
+                    inspectorHeader.style.cursor = 'grabbing';
+                }
+            }
+            
+            function drag(e) {
+                if (isDragging) {
+                    e.preventDefault();
+                    
+                    currentX = e.clientX - initialX;
+                    currentY = e.clientY - initialY;
+                    
+                    xOffset = currentX;
+                    yOffset = currentY;
+                    
+                    // Constrain to viewport
+                    const rect = floatingInspector.getBoundingClientRect();
+                    const maxX = window.innerWidth - rect.width;
+                    const maxY = window.innerHeight - rect.height;
+                    
+                    xOffset = Math.max(0, Math.min(xOffset, maxX));
+                    yOffset = Math.max(0, Math.min(yOffset, maxY));
+                    
+                    floatingInspector.style.transform = `translate(${xOffset}px, ${yOffset}px)`;
+                }
+            }
+            
+            function dragEnd(e) {
+                if (isDragging) {
+                    isDragging = false;
+                    floatingInspector.style.cursor = 'default';
+                    inspectorHeader.style.cursor = 'move';
+                }
+            }
+        }
         
         // Toggle add mode button
         document.getElementById('toggle-add-mode').addEventListener('click', function() {
@@ -851,7 +998,7 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // Escape: Clear selection
             if (event.key === 'Escape') {
-                clearNodeSelection();
+                clearNodeSelection(); // This will hide the inspector
             }
         });
     }
@@ -1150,8 +1297,8 @@ document.addEventListener('DOMContentLoaded', function() {
         if (event.ctrlKey || event.metaKey) {
             toggleNodeSelection(d);
         } else {
-            // Single selection mode - clear other selections
-            clearNodeSelection();
+            // Single selection mode - clear other selections without hiding inspector
+            clearNodeSelectionSilent();
             toggleNodeSelection(d);
             
             // Flash the selected node to give immediate feedback
@@ -1166,20 +1313,26 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
         
-        // Show object details in the inspector
+        // Always show object details for the clicked node
         console.log('Calling showObjectDetails with node:', d);
         showObjectDetails(d);
         
         // Debug selection state
         console.log(`Selection state after click:`, selectedNodes.map(n => n.name || n.id));
         
-        // Clear the entire svg container and redraw everything from scratch
-        // This ensures no residual elements remain after selection
-        const container = svg.select('g');
-        container.selectAll('*').remove();
+        // Apply selection highlighting without full redraw
+        applySelectionHighlighting();
+    }
+
+    // Apply selection highlighting to nodes without full redraw
+    function applySelectionHighlighting() {
+        // Remove selection from all nodes
+        d3.selectAll('.network-node').classed('selected', false);
         
-        // Update visualization with a full refresh
-        updateNetworkGraph();
+        // Add selection to selected nodes
+        selectedNodes.forEach(node => {
+            d3.select(`#node-${node.id}`).classed('selected', true);
+        });
     }
 
     // D3 drag functions
@@ -1220,15 +1373,8 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }
         
-        // Clear the entire svg container and redraw everything from scratch
-        // This ensures no residual elements remain during drag
-        const container = svg.select('g');
-        container.selectAll('*').remove();
-        
-        // Update visualization with a full refresh
-        updateNetworkGraph();
-        
-        // Let the simulation handle position updates with minimal energy
+        // Don't clear and redraw during drag - let simulation handle the updates
+        // Restart simulation with minimal energy to update positions
         simulation.alpha(0.1).restart();
     }
 
@@ -1242,14 +1388,6 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Clear the dragged node reference
         window.draggedNode = null;
-        
-        // Clear the entire svg container and redraw everything from scratch
-        // This ensures no residual elements remain after drag ends
-        const container = svg.select('g');
-        container.selectAll('*').remove();
-        
-        // Do a final complete update to fix any visual artifacts
-        updateNetworkGraph();
         
         // Add a burst of energy to the simulation so nodes can start moving
         simulation.alpha(0.3).restart();
@@ -1442,6 +1580,26 @@ document.addEventListener('DOMContentLoaded', function() {
         // Clear selection array
         selectedNodes = [];
         
+        // Hide inspector when nothing is selected
+        hideInspector();
+        
+        // Update UI
+        updateSelectionUI();
+    }
+    
+    // Clear selection without hiding inspector (for internal use when switching selections)
+    function clearNodeSelectionSilent() {
+        // Remove selected class from all nodes
+        d3.selectAll('.network-node').classed('selected', false);
+        
+        // Also remove the class from DOM elements directly
+        document.querySelectorAll('.network-node').forEach(node => {
+            node.classList.remove('selected');
+        });
+        
+        // Clear selection array
+        selectedNodes = [];
+        
         // Update UI
         updateSelectionUI();
     }
@@ -1611,12 +1769,32 @@ document.addEventListener('DOMContentLoaded', function() {
             .attr('dy', 35)
             .text(d => d.name || d.id);
         
-        // Add network info label if available
-        nodeEnter.append('text')
-            .attr('class', 'network-info')
-            .attr('text-anchor', 'middle')
-            .attr('dy', 50)
-            .text(d => getNetworkDetails(d.metadata));
+        // Add IP address/netmask labels with enhanced visibility
+        nodeEnter.each(function(d) {
+            // Add a background for the IP text if there is network info
+            const networkInfo = getNetworkDetails(d.metadata);
+            if (networkInfo) {
+                const node = d3.select(this);
+                
+                // Add a small background rectangle for better visibility
+                node.append('rect')
+                    .attr('class', 'ip-label-bg')
+                    .attr('width', networkInfo.length * 6 + 10) // Approximate width based on text length
+                    .attr('height', 18)
+                    .attr('x', -(networkInfo.length * 6 + 10) / 2) // Center horizontally
+                    .attr('y', 40)  // Position just below the node name
+                    .attr('rx', 4) // Rounded corners
+                    .attr('ry', 4)
+                    .attr('fill', 'rgba(255,255,255,0.8)'); // Semi-transparent white
+                    
+                // Add the IP text on top of background
+                node.append('text')
+                    .attr('class', 'network-info')
+                    .attr('text-anchor', 'middle')
+                    .attr('dy', 54)
+                    .text(networkInfo);
+            }
+        });
         
         // Merge and update all nodes
         const nodeUpdate = nodeEnter.merge(node);
