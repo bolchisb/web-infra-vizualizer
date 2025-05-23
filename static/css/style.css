@@ -809,3 +809,97 @@ input:checked + .slider:before {
     transition: transform 0.3s ease;
     transform: translateX(0);
 }
+
+/* Context Menu Styles */
+.context-menu {
+    position: absolute;
+    background-color: white;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 2000;
+    min-width: 120px;
+    padding: 4px 0;
+    display: none;
+    font-size: 14px;
+}
+
+.context-menu-item {
+    padding: 8px 16px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.context-menu-item:hover {
+    background-color: #f0f0f0;
+}
+
+.context-menu-item.danger:hover {
+    background-color: #fee;
+    color: #c0392b;
+}
+
+.context-menu-separator {
+    height: 1px;
+    background-color: #eee;
+    margin: 4px 0;
+}
+
+.context-menu-icon {
+    width: 16px;
+    height: 16px;
+    display: inline-block;
+    text-align: center;
+    font-weight: bold;
+    font-size: 12px;
+}
+
+/* Rename Input Modal */
+.rename-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: none;
+    justify-content: center;
+    align-items: center;
+    z-index: 3000;
+}
+
+.rename-modal-content {
+    background-color: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    width: 400px;
+    max-width: 90%;
+}
+
+.rename-modal h3 {
+    margin: 0 0 15px 0;
+    color: #333;
+}
+
+.rename-modal input {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 16px;
+    margin-bottom: 15px;
+}
+
+.rename-modal-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
+.rename-modal-actions .btn {
+    padding: 8px 16px;
+}

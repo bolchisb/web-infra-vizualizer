@@ -334,6 +334,94 @@ def get_relationships():
             
         return jsonify(relationships)
 
+@app.route('/relationships/<relationship_id>', methods=['PATCH'])
+def update_relationship(relationship_id):
+    data = request.json
+    
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+    
+    # Prepare update properties
+    update_props = {}
+    
+    # Handle type update
+    if 'type' in data:
+        update_props['type'] = data['type']
+    
+    # Handle metadata updates
+    if 'metadata' in data:
+        metadata = data['metadata']
+        if isinstance(metadata, dict):
+            for key, value in metadata.items():
+                if isinstance(value, (str, int, float, bool)) or (isinstance(value, list) and all(isinstance(x, (str, int, float, bool)) for x in value)):
+                    update_props[f'metadata_{key}'] = value
+                else:
+                    update_props[f'metadata_{key}_json'] = json.dumps(value)
+    
+    if not update_props:
+        return jsonify({"error": "No valid properties to update"}), 400
+    
+    with get_db_session() as session:
+        # Build SET clause dynamically
+        set_clauses = []
+        for key in update_props:
+            set_clauses.append(f"r.{key} = ${key}")
+        
+        query = f"""
+            MATCH ()-[r:CONNECTS]->()
+            WHERE r.id = $id
+            SET {', '.join(set_clauses)}
+            RETURN r.id as id, r.type as type, properties(r) as properties
+        """
+        
+        result = session.run(query, id=relationship_id, **update_props)
+        record = result.single()
+        
+        if record:
+            # Process response to include metadata
+            rel_data = dict(record)
+            properties = rel_data.pop('properties', {})
+            
+            # Extract metadata
+            metadata = {}
+            for key, value in properties.items():
+                if key.startswith('metadata_'):
+                    orig_key = key[9:]
+                    if key.endswith('_json'):
+                        orig_key = orig_key[:-5]
+                        try:
+                            metadata[orig_key] = json.loads(value)
+                        except (ValueError, TypeError):
+                            metadata[orig_key] = value
+                    else:
+                        metadata[orig_key] = value
+            
+            if metadata:
+                rel_data['metadata'] = metadata
+                
+            return jsonify(rel_data), 200
+        else:
+            return jsonify({"error": "Relationship not found"}), 404
+
+@app.route('/relationships/<relationship_id>', methods=['DELETE'])
+def delete_relationship(relationship_id):
+    with get_db_session() as session:
+        result = session.run(
+            """
+            MATCH ()-[r:CONNECTS]->()
+            WHERE r.id = $id
+            DELETE r
+            RETURN count(r) as deleted
+            """,
+            id=relationship_id
+        )
+        
+        record = result.single()
+        if record and record["deleted"] > 0:
+            return jsonify({"message": "Relationship deleted successfully"}), 200
+        else:
+            return jsonify({"error": "Relationship not found"}), 404
+
 @app.route('/network', methods=['GET'])
 def get_network():
     with get_db_session() as session:

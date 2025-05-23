@@ -22,6 +22,11 @@ document.addEventListener('DOMContentLoaded', function() {
     let deviceGroups = [];
     let selectedNodes = [];
     
+    // Context menu state
+    let contextMenuTarget = null;
+    let currentContextNode = null;
+    let currentContextConnection = null;
+    
     // Force simulation for the network graph
     let simulation;
     let svg;
@@ -292,10 +297,21 @@ document.addEventListener('DOMContentLoaded', function() {
             .enter()
             .append('line')
             .attr('class', d => `link ${d.type || 'ethernet'}`)
-            .attr('id', d => `link-${d.id}`);
+            .attr('id', d => `link-${d.id}`)
+            .on('contextmenu', function(event, d) {
+                console.log('Link right-clicked:', d.id, d.type);
+                event.preventDefault();
+                event.stopPropagation();
+                currentContextConnection = d;
+                const [x, y] = d3.pointer(event, document.body);
+                console.log('Showing connection context menu at:', x, y);
+                showContextMenu('connection-context-menu', x, y);
+            });
         
         // Then add VPN links with curved paths
         const vpnLinks = networkRelationships.filter(d => d.type === 'vpn');
+        
+        console.log('Creating VPN links:', vpnLinks.length, vpnLinks);
         
         container.selectAll('.vpn-link')
             .data(vpnLinks)
@@ -307,6 +323,24 @@ document.addEventListener('DOMContentLoaded', function() {
                 const source = getNodeById(d.source_id);
                 const target = getNodeById(d.target_id);
                 return renderVPNPath(source, target);
+            })
+            .on('contextmenu', function(event, d) {
+                console.log('VPN Link right-clicked:', d);
+                console.log('VPN Link data structure:', {
+                    id: d.id,
+                    type: d.type,
+                    source_id: d.source_id,
+                    target_id: d.target_id,
+                    source: d.source,
+                    target: d.target
+                });
+                event.preventDefault();
+                event.stopPropagation();
+                currentContextConnection = d;
+                console.log('Set currentContextConnection to:', currentContextConnection);
+                const [x, y] = d3.pointer(event, document.body);
+                console.log('Showing VPN connection context menu at:', x, y);
+                showContextMenu('connection-context-menu', x, y);
             });
         
         // Add groups
@@ -353,7 +387,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 .on('start', dragstarted)
                 .on('drag', dragged)
                 .on('end', dragended))
-            .on('click', handleNodeClick);
+            .on('click', handleNodeClick)
+            .on('contextmenu', function(event, d) {
+                console.log('Node right-clicked:', d.name, d.id);
+                event.preventDefault();
+                event.stopPropagation();
+                currentContextNode = d;
+                const [x, y] = d3.pointer(event, document.body);
+                console.log('Showing node context menu at:', x, y);
+                showContextMenu('node-context-menu', x, y);
+            });
         
         // Add circles to nodes with icons based on type
         nodes.append('circle')
@@ -446,20 +489,20 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Update positions during simulation
                 links
                     .attr('x1', d => {
-                        const source = getNodeById(d.source_id);
-                        return source.x;
+                        const sourceNode = getNodeById(d.source_id);
+                        return sourceNode.x;
                     })
                     .attr('y1', d => {
-                        const source = getNodeById(d.source_id);
-                        return source.y;
+                        const sourceNode = getNodeById(d.source_id);
+                        return sourceNode.y;
                     })
                     .attr('x2', d => {
-                        const target = getNodeById(d.target_id);
-                        return target.x;
+                        const targetNode = getNodeById(d.target_id);
+                        return targetNode.x;
                     })
                     .attr('y2', d => {
-                        const target = getNodeById(d.target_id);
-                        return target.y;
+                        const targetNode = getNodeById(d.target_id);
+                        return targetNode.y;
                     });
                 
                 // Update VPN paths
@@ -693,6 +736,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 addNodeModal.style.display = 'none';
                 addConnectionModal.style.display = 'none';
                 document.getElementById('create-group-modal').style.display = 'none';
+                hideUpdateConnectionModal();
             });
         });
         
@@ -999,6 +1043,168 @@ document.addEventListener('DOMContentLoaded', function() {
             // Escape: Clear selection
             if (event.key === 'Escape') {
                 clearNodeSelection(); // This will hide the inspector
+            }
+        });
+        
+        // Close buttons for modals
+        closeButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                addNodeModal.style.display = 'none';
+                addConnectionModal.style.display = 'none';
+                document.getElementById('create-group-modal').style.display = 'none';
+                hideUpdateConnectionModal();
+            });
+        });
+        
+        // Context Menu Event Listeners
+        
+        // Hide context menus when clicking elsewhere
+        document.addEventListener('click', function(event) {
+            console.log('Global click handler triggered. Target:', event.target, 'Closest context menu:', event.target.closest('.context-menu'));
+            
+            if (!event.target.closest('.context-menu')) {
+                console.log('Click was outside context menu, hiding all context menus');
+                hideAllContextMenus();
+            } else {
+                console.log('Click was inside context menu, not hiding');
+            }
+        });
+        
+        // Prevent browser context menu on canvas
+        document.getElementById('network-graph').addEventListener('contextmenu', function(event) {
+            event.preventDefault();
+        });
+        
+        // Node context menu actions
+        const renameNodeBtn = document.getElementById('rename-node');
+        const deleteNodeBtn = document.getElementById('delete-node');
+        
+        if (renameNodeBtn) {
+            console.log('Found rename-node button, attaching event listener');
+            renameNodeBtn.addEventListener('click', function(event) {
+                event.stopPropagation(); // Prevent global click handler from firing
+                console.log('Rename node clicked, currentContextNode:', currentContextNode);
+                
+                // Get the context node from the button's data or global variable
+                const contextNode = this.contextNode || currentContextNode;
+                console.log('Using context node:', contextNode);
+                
+                if (contextNode) {
+                    hideAllContextMenus();
+                    showRenameModal(contextNode);
+                } else {
+                    console.warn('No current context node set');
+                }
+            });
+        } else {
+            console.error('rename-node button not found');
+        }
+        
+        if (deleteNodeBtn) {
+            console.log('Found delete-node button, attaching event listener');
+            deleteNodeBtn.addEventListener('click', function(event) {
+                event.stopPropagation(); // Prevent global click handler from firing
+                console.log('Delete node clicked, currentContextNode:', currentContextNode);
+                
+                // Get the context node from the button's data or global variable
+                const contextNode = this.contextNode || currentContextNode;
+                console.log('Using context node:', contextNode);
+                
+                if (contextNode) {
+                    hideAllContextMenus();
+                    deleteNetworkObject(contextNode.id);
+                } else {
+                    console.warn('No current context node set');
+                }
+            });
+        } else {
+            console.error('delete-node button not found');
+        }
+        
+        // Connection context menu actions
+        const updateConnectionBtn = document.getElementById('update-connection');
+        const deleteConnectionBtn = document.getElementById('delete-connection');
+        
+        if (updateConnectionBtn) {
+            console.log('Found update-connection button, attaching event listener');
+            updateConnectionBtn.addEventListener('click', function(event) {
+                event.stopPropagation(); // Prevent global click handler from firing
+                console.log('Update connection clicked, currentContextConnection:', currentContextConnection);
+                
+                // Get the context connection from the button's data or global variable
+                const contextConnection = this.contextConnection || currentContextConnection;
+                console.log('Using context connection:', contextConnection);
+                
+                if (contextConnection) {
+                    hideAllContextMenus();
+                    showUpdateConnectionModal(contextConnection);
+                } else {
+                    console.warn('No current context connection set');
+                }
+            });
+        } else {
+            console.error('update-connection button not found');
+        }
+        
+        if (deleteConnectionBtn) {
+            console.log('Found delete-connection button, attaching event listener');
+            deleteConnectionBtn.addEventListener('click', function(event) {
+                event.stopPropagation(); // Prevent global click handler from firing
+                console.log('Delete connection clicked, currentContextConnection:', currentContextConnection);
+                
+                // Get the context connection from the button's data or global variable
+                const contextConnection = this.contextConnection || currentContextConnection;
+                console.log('Using context connection:', contextConnection);
+                
+                if (contextConnection) {
+                    hideAllContextMenus();
+                    deleteConnection(contextConnection.id);
+                } else {
+                    console.warn('No current context connection set');
+                }
+            });
+        } else {
+            console.error('delete-connection button not found');
+        }
+        
+        // Rename modal handlers
+        document.getElementById('cancel-rename').addEventListener('click', hideRenameModal);
+        
+        document.getElementById('confirm-rename').addEventListener('click', function() {
+            console.log('Confirm rename button clicked');
+            const newName = document.getElementById('rename-input').value;
+            console.log('New name from input:', newName);
+            console.log('Current context node:', currentContextNode);
+            
+            if (currentContextNode && newName.trim()) {
+                console.log('Calling renameNetworkObject with:', currentContextNode.id, newName);
+                renameNetworkObject(currentContextNode.id, newName);
+                hideRenameModal();
+            } else {
+                console.warn('Cannot rename - missing context node or empty name');
+            }
+        });
+        
+        // Handle Enter key in rename input
+        document.getElementById('rename-input').addEventListener('keydown', function(event) {
+            if (event.key === 'Enter') {
+                const newName = this.value;
+                if (currentContextNode && newName.trim()) {
+                    renameNetworkObject(currentContextNode.id, newName);
+                    hideRenameModal();
+                }
+            } else if (event.key === 'Escape') {
+                hideRenameModal();
+            }
+        });
+        
+        // Update connection form handler
+        document.getElementById('update-connection-form').addEventListener('submit', function(event) {
+            event.preventDefault();
+            const newType = document.getElementById('update-connection-type').value;
+            if (currentContextConnection) {
+                updateConnection(currentContextConnection.id, newType);
+                hideUpdateConnectionModal();
             }
         });
     }
@@ -1745,7 +1951,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 .on('start', dragstarted)
                 .on('drag', dragged)
                 .on('end', dragended))
-            .on('click', handleNodeClick);
+            .on('click', handleNodeClick)
+            .on('contextmenu', function(event, d) {
+                console.log('Node right-clicked:', d.name, d.id);
+                event.preventDefault();
+                event.stopPropagation();
+                currentContextNode = d;
+                const [x, y] = d3.pointer(event, document.body);
+                console.log('Showing node context menu at:', x, y);
+                showContextMenu('node-context-menu', x, y);
+            });
         
         // Add node image
         nodeEnter.append('circle')
@@ -2003,5 +2218,246 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Return a simple quadratic curve path
         return `M${sx},${sy} Q${ctrlX},${ctrlY} ${tx},${ty}`;
+    }
+
+    // Context Menu Functions
+    function showContextMenu(menuId, x, y) {
+        console.log('showContextMenu called with:', menuId, x, y);
+        
+        // Hide any existing context menu displays (but keep context variables)
+        hideContextMenuDisplays();
+        
+        const menu = document.getElementById(menuId);
+        console.log('Found menu element:', menu);
+        
+        if (menu) {
+            menu.style.display = 'block';
+            menu.style.left = x + 'px';
+            menu.style.top = y + 'px';
+            
+            console.log('Menu positioned at:', menu.style.left, menu.style.top);
+            
+            // Store context data in the menu buttons as backup
+            if (menuId === 'node-context-menu' && currentContextNode) {
+                const renameBtn = document.getElementById('rename-node');
+                const deleteBtn = document.getElementById('delete-node');
+                if (renameBtn) renameBtn.contextNode = currentContextNode;
+                if (deleteBtn) deleteBtn.contextNode = currentContextNode;
+                console.log('Stored context node in buttons:', currentContextNode);
+            } else if (menuId === 'connection-context-menu' && currentContextConnection) {
+                const updateBtn = document.getElementById('update-connection');
+                const deleteBtn = document.getElementById('delete-connection');
+                if (updateBtn) updateBtn.contextConnection = currentContextConnection;
+                if (deleteBtn) deleteBtn.contextConnection = currentContextConnection;
+                console.log('Stored context connection in buttons:', currentContextConnection);
+            }
+            
+            // Ensure menu doesn't go off screen
+            const rect = menu.getBoundingClientRect();
+            if (rect.right > window.innerWidth) {
+                menu.style.left = (x - rect.width) + 'px';
+                console.log('Adjusted left position:', menu.style.left);
+            }
+            if (rect.bottom > window.innerHeight) {
+                menu.style.top = (y - rect.height) + 'px';
+                console.log('Adjusted top position:', menu.style.top);
+            }
+            
+            console.log('Context menu should now be visible');
+        } else {
+            console.error('Menu element not found:', menuId);
+        }
+    }
+    
+    // Hide context menu displays without clearing context variables
+    function hideContextMenuDisplays() {
+        document.querySelectorAll('.context-menu').forEach(menu => {
+            menu.style.display = 'none';
+        });
+    }
+    
+    function hideAllContextMenus() {
+        console.log('hideAllContextMenus called, clearing context variables');
+        console.log('Before clearing - currentContextNode:', currentContextNode, 'currentContextConnection:', currentContextConnection);
+        
+        hideContextMenuDisplays();
+        
+        // Reset context state
+        currentContextNode = null;
+        currentContextConnection = null;
+        
+        console.log('After clearing - currentContextNode:', currentContextNode, 'currentContextConnection:', currentContextConnection);
+    }
+    
+    function showRenameModal(node) {
+        console.log('showRenameModal called with node:', node);
+        const modal = document.getElementById('rename-modal');
+        const input = document.getElementById('rename-input');
+        
+        console.log('Found modal:', modal, 'input:', input);
+        
+        if (modal && input) {
+            currentContextNode = node;
+            input.value = node.name || '';
+            modal.style.display = 'flex';
+            input.focus();
+            input.select();
+            console.log('Rename modal should now be visible with name:', input.value);
+        } else {
+            console.error('Rename modal elements not found');
+        }
+    }
+    
+    function hideRenameModal() {
+        const modal = document.getElementById('rename-modal');
+        if (modal) {
+            modal.style.display = 'none';
+            currentContextNode = null;
+        }
+    }
+    
+    function showUpdateConnectionModal(connection) {
+        const modal = document.getElementById('update-connection-modal');
+        const select = document.getElementById('update-connection-type');
+        
+        if (modal && select) {
+            currentContextConnection = connection;
+            select.value = connection.type || 'ethernet';
+            modal.style.display = 'block';
+        }
+    }
+    
+    function hideUpdateConnectionModal() {
+        const modal = document.getElementById('update-connection-modal');
+        if (modal) {
+            modal.style.display = 'none';
+            currentContextConnection = null;
+        }
+    }
+    
+    // API Functions for Context Menu Actions
+    function renameNetworkObject(objectId, newName) {
+        console.log('renameNetworkObject called with:', objectId, newName);
+        
+        if (!newName.trim()) {
+            console.error('Name cannot be empty');
+            showToast('Name cannot be empty', 'error');
+            return;
+        }
+        
+        const updateData = {
+            name: newName.trim()
+        };
+        
+        console.log('Sending PATCH request to:', `${API_URL}objects/${objectId}`, 'with data:', updateData);
+        
+        fetch(`${API_URL}objects/${objectId}`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(updateData),
+        })
+        .then(response => {
+            console.log('PATCH response received:', response.status, response.statusText);
+            if (!response.ok) {
+                throw new Error(`Server responded with status: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('Object renamed successfully:', data);
+            
+            // Update local object data
+            const object = networkObjects.find(obj => obj.id === objectId);
+            if (object) {
+                object.name = newName.trim();
+                console.log('Updated local object:', object);
+            } else {
+                console.warn('Could not find object in local data:', objectId);
+            }
+            
+            // Update visualization
+            updateNetworkGraph();
+            
+            // Show toast notification
+            showToast(`Renamed to "${newName.trim()}"`);
+            
+            // Update inspector if showing this object
+            if (currentContextNode && currentContextNode.id === objectId) {
+                showObjectDetails(object);
+            }
+        })
+        .catch(error => {
+            console.error('Error renaming object:', error);
+            showToast('Failed to rename object: ' + error.message, 'error');
+        });
+    }
+    
+    function updateConnection(connectionId, newType) {
+        const updateData = {
+            type: newType
+        };
+        
+        fetch(`${API_URL}relationships/${connectionId}`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(updateData),
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Server responded with status: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('Connection updated successfully:', data);
+            
+            // Update local relationship data
+            const relationship = networkRelationships.find(rel => rel.id === connectionId);
+            if (relationship) {
+                relationship.type = newType;
+            }
+            
+            // Update visualization
+            updateNetworkGraph();
+            
+            // Show toast notification
+            showToast(`Connection updated to ${newType}`);
+        })
+        .catch(error => {
+            console.error('Error updating connection:', error);
+            showToast('Failed to update connection: ' + error.message, 'error');
+        });
+    }
+    
+    function deleteConnection(connectionId) {
+        if (!confirm('Are you sure you want to delete this connection?')) {
+            return;
+        }
+        
+        fetch(`${API_URL}relationships/${connectionId}`, {
+            method: 'DELETE'
+        })
+        .then(response => {
+            if (response.ok) {
+                // Remove from local data
+                networkRelationships = networkRelationships.filter(rel => rel.id !== connectionId);
+                
+                // Update visualization
+                updateNetworkGraph();
+                
+                showToast('Connection deleted');
+            } else {
+                console.error('Error deleting connection');
+                showToast('Failed to delete connection', 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error deleting connection:', error);
+            showToast('Failed to delete connection: ' + error.message, 'error');
+        });
     }
 });

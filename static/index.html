@@ -184,6 +184,65 @@
         </div>
     </div>
     
+    <!-- Context Menus -->
+    <div id="node-context-menu" class="context-menu">
+        <div class="context-menu-item" id="rename-node">
+            <span class="context-menu-icon">✏️</span>
+            <span>Rename</span>
+        </div>
+        <div class="context-menu-separator"></div>
+        <div class="context-menu-item danger" id="delete-node">
+            <span class="context-menu-icon">🗑️</span>
+            <span>Delete</span>
+        </div>
+    </div>
+    
+    <div id="connection-context-menu" class="context-menu">
+        <div class="context-menu-item" id="update-connection">
+            <span class="context-menu-icon">⚙️</span>
+            <span>Update</span>
+        </div>
+        <div class="context-menu-separator"></div>
+        <div class="context-menu-item danger" id="delete-connection">
+            <span class="context-menu-icon">🗑️</span>
+            <span>Delete</span>
+        </div>
+    </div>
+    
+    <!-- Rename Modal -->
+    <div id="rename-modal" class="rename-modal">
+        <div class="rename-modal-content">
+            <h3>Rename Network Object</h3>
+            <input type="text" id="rename-input" placeholder="Enter new name">
+            <div class="rename-modal-actions">
+                <button class="btn" id="cancel-rename">Cancel</button>
+                <button class="btn btn-primary" id="confirm-rename">Rename</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Update Connection Modal -->
+    <div id="update-connection-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Update Connection</h2>
+            <form id="update-connection-form">
+                <div class="form-group">
+                    <label for="update-connection-type">Connection Type:</label>
+                    <select id="update-connection-type" required>
+                        <option value="ethernet">Ethernet</option>
+                        <option value="fiber">Fiber Optic</option>
+                        <option value="wireless">Wireless</option>
+                        <option value="vpn">VPN Tunnel</option>
+                    </select>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Update</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
     <script src="js/app.js"></script>
 </body>
 </html>
