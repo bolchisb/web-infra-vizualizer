@@ -738,7 +738,10 @@ document.addEventListener('DOMContentLoaded', function() {
             button.addEventListener('click', () => {
                 addNodeModal.style.display = 'none';
                 addConnectionModal.style.display = 'none';
-                document.getElementById('create-group-modal').style.display = 'none';
+                const createGroupModal = document.getElementById('create-group-modal');
+                if (createGroupModal) {
+                    createGroupModal.style.display = 'none';
+                }
                 hideUpdateConnectionModal();
             });
         });
@@ -995,9 +998,12 @@ document.addEventListener('DOMContentLoaded', function() {
         });
         
         // Untangle layout button
-        document.getElementById('untangle-layout-btn').addEventListener('click', function() {
-            untangleLayout();
-        });
+        const untangleLayoutBtn = document.getElementById('untangle-layout-btn');
+        if (untangleLayoutBtn) {
+            untangleLayoutBtn.addEventListener('click', function() {
+                untangleLayout();
+            });
+        }
         
         // Add keyboard shortcuts
         document.addEventListener('keydown', function(event) {
@@ -1012,7 +1018,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 if (selectedNodes.length >= 2) {
                     // Show create group modal
-                    document.getElementById('create-group-modal').style.display = 'block';
+                    const createGroupModal = document.getElementById('create-group-modal');
+                    if (createGroupModal) {
+                        createGroupModal.style.display = 'block';
+                    }
                 } else {
                     showToast('Select at least 2 devices to create a group', 'error');
                 }
@@ -1065,7 +1074,10 @@ document.addEventListener('DOMContentLoaded', function() {
             button.addEventListener('click', () => {
                 addNodeModal.style.display = 'none';
                 addConnectionModal.style.display = 'none';
-                document.getElementById('create-group-modal').style.display = 'none';
+                const createGroupModal = document.getElementById('create-group-modal');
+                if (createGroupModal) {
+                    createGroupModal.style.display = 'none';
+                }
                 hideUpdateConnectionModal();
             });
         });
@@ -1085,9 +1097,12 @@ document.addEventListener('DOMContentLoaded', function() {
         });
         
         // Prevent browser context menu on canvas
-        document.getElementById('network-graph').addEventListener('contextmenu', function(event) {
-            event.preventDefault();
-        });
+        const networkGraph = document.getElementById('network-graph');
+        if (networkGraph) {
+            networkGraph.addEventListener('contextmenu', function(event) {
+                event.preventDefault();
+            });
+        }
         
         // Node context menu actions
         const renameNodeBtn = document.getElementById('rename-node');
@@ -1185,45 +1200,59 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         // Rename modal handlers
-        document.getElementById('cancel-rename').addEventListener('click', hideRenameModal);
+        const cancelRenameBtn = document.getElementById('cancel-rename');
+        const confirmRenameBtn = document.getElementById('confirm-rename');
+        const renameInput = document.getElementById('rename-input');
+        const updateConnectionForm = document.getElementById('update-connection-form');
         
-        document.getElementById('confirm-rename').addEventListener('click', function() {
-            console.log('Confirm rename button clicked');
-            const newName = document.getElementById('rename-input').value;
-            console.log('New name from input:', newName);
-            console.log('Current context node:', currentContextNode);
-            
-            if (currentContextNode && newName.trim()) {
-                console.log('Calling renameNetworkObject with:', currentContextNode.id, newName);
-                renameNetworkObject(currentContextNode.id, newName);
-                hideRenameModal();
-            } else {
-                console.warn('Cannot rename - missing context node or empty name');
-            }
-        });
+        if (cancelRenameBtn) {
+            cancelRenameBtn.addEventListener('click', hideRenameModal);
+        }
         
-        // Handle Enter key in rename input
-        document.getElementById('rename-input').addEventListener('keydown', function(event) {
-            if (event.key === 'Enter') {
-                const newName = this.value;
+        if (confirmRenameBtn) {
+            confirmRenameBtn.addEventListener('click', function() {
+                console.log('Confirm rename button clicked');
+                const newName = document.getElementById('rename-input').value;
+                console.log('New name from input:', newName);
+                console.log('Current context node:', currentContextNode);
+                
                 if (currentContextNode && newName.trim()) {
+                    console.log('Calling renameNetworkObject with:', currentContextNode.id, newName);
                     renameNetworkObject(currentContextNode.id, newName);
                     hideRenameModal();
+                } else {
+                    console.warn('Cannot rename - missing context node or empty name');
                 }
-            } else if (event.key === 'Escape') {
-                hideRenameModal();
-            }
-        });
+            });
+        }
+        
+        // Handle Enter key in rename input
+        if (renameInput) {
+            renameInput.addEventListener('keydown', function(event) {
+                if (event.key === 'Enter') {
+                    const newName = this.value;
+                    if (currentContextNode && newName.trim()) {
+                        renameNetworkObject(currentContextNode.id, newName);
+                        hideRenameModal();
+                    }
+                } else if (event.key === 'Escape') {
+                    hideRenameModal();
+                }
+            });
+        }
         
         // Update connection form handler
-        document.getElementById('update-connection-form').addEventListener('submit', function(event) {
-            event.preventDefault();
-            const newType = document.getElementById('update-connection-type').value;
-            if (currentContextConnection) {
-                updateConnection(currentContextConnection.id, newType);
-                hideUpdateConnectionModal();
-            }
-        });
+        if (updateConnectionForm) {
+            updateConnectionForm.addEventListener('submit', function(event) {
+                event.preventDefault();
+                const updateConnectionType = document.getElementById('update-connection-type');
+                if (updateConnectionType && currentContextConnection) {
+                    const newType = updateConnectionType.value;
+                    updateConnection(currentContextConnection.id, newType);
+                    hideUpdateConnectionModal();
+                }
+            });
+        }
     }
     
     function addNodeAtPosition(x, y) {
